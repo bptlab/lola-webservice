@@ -1,0 +1,71 @@
+*** lola-1.18/src/formula.cc.bak	Sun Jul 30 15:26:46 2017
+--- lola-1.18/src/formula.cc	Sun Jul 30 15:27:58 2017
+***************
+*** 940,946 ****
+          // Karsten fragen
+          default: /* this should not happen */
+              assert(false);
+!             return false;
+      }
+  }
+  
+--- 940,946 ----
+          // Karsten fragen
+          default: /* this should not happen */
+              assert(false);
+!             return NULL;
+      }
+  }
+  
+***************
+*** 1017,1023 ****
+  
+      // Karsten fragen
+      /* this should not happen */ assert(false);
+!     return false;
+  }
+  
+  formula* booleanformula::reduce(int* res) {
+--- 1017,1023 ----
+  
+      // Karsten fragen
+      /* this should not happen */ assert(false);
+!     return NULL;
+  }
+  
+  formula* booleanformula::reduce(int* res) {
+***************
+*** 1127,1133 ****
+                      // Karsten fragen
+                  default: /* this should not happen */
+                      assert(false);
+!                     return false;
+              }
+          case 2:
+              * res = 2;
+--- 1127,1133 ----
+                      // Karsten fragen
+                  default: /* this should not happen */
+                      assert(false);
+!                     return NULL;
+              }
+          case 2:
+              * res = 2;
+***************
+*** 1136,1142 ****
+              // Karsten fragen:
+          default: /* this should not happen */
+              assert(false);
+!             return false;
+      }
+  }
+  
+--- 1136,1142 ----
+              // Karsten fragen:
+          default: /* this should not happen */
+              assert(false);
+!             return NULL;
+      }
+  }
+  
+
