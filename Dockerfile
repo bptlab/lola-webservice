@@ -59,6 +59,6 @@ RUN cd /opt/lola/ \
 # Install pnapi
 RUN cd /opt/lola/pnapi/build \
     && make install \
-    && cp utils/sound /opt/lola/bin/
+    && cp utils/.libs/sound /opt/lola/bin/ \
     && find src -iname "*.so*" -exec cp {} /usr/lib/ \;
 
