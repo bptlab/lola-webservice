@@ -3,7 +3,7 @@
 $uuid=date("Ymd-His-".rand(0,10));
 $workdir="/data/lola-workdir/".$uuid;
 $bindir="/opt/lola/bin";
-$debug=true;
+$debug=false;
 
 function is_url($url){
     $url = substr($url,-1) == "/" ? substr($url,0,-1) : $url;
