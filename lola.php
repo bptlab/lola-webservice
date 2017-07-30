@@ -3,12 +3,14 @@
 $uuid=date("Ymd-His-".rand(0,10));
 $workdir="/data/lola-workdir/".$uuid;
 $bindir="/opt/lola/bin";
+$debug=true;
 
 function is_url($url){
     $url = substr($url,-1) == "/" ? substr($url,0,-1) : $url;
     if ( !$url || $url=="" ) return false;
-    if ( !( $parts = @parse_url( $url ) ) ) return false;
-    else {
+    if ( !( $parts = @parse_url( $url ) ) ) {
+	return false;
+    } else {
         if ( $parts["scheme"] != "http" && $parts["scheme"] != "https" && $parts["scheme"] != "ftp" && $parts["scheme"] != "gopher" ) return false;
         else if ( !eregi( "^[0-9a-z]([-.]?[0-9a-z])*.[a-z]{2,4}$", $parts[host], $regs ) ) return false;
         else if ( !eregi( "^([0-9a-z-]|[_])*$", $parts[user], $regs ) ) return false;
@@ -50,6 +52,7 @@ if (empty($_REQUEST['input'])) {
     die("Empty input");
 }
 
+if ($debug) echo "Creating $workdir<br/>";
 mkdir($workdir);
 if (is_url($_REQUEST['input'])) {
     copy($_REQUEST['input'], $workdir."/".$uuid.".pnml");
@@ -59,12 +62,24 @@ if (is_url($_REQUEST['input'])) {
     fclose($handle);
 }
 
-exec($bindir."/petri -ipnml -oowfn ".$workdir."/".$uuid.".pnml");
+if ($debug) echo "Executing ".$bindir."/petri -ipnml -oowfn ".$workdir."/".$uuid.".pnml<br/>";
+exec($bindir."/petri -ipnml -oowfn ".$workdir."/".$uuid.".pnml 2>&1", $petri_output, $petri_return_status);
+if ($debug) echo "petri return status: " . $petri_return_status . "<br/>";
+if ($petri_return_status != 0) {
+    if ($debug) {
+	foreach ($petri_output as $line) {
+            echo htmlspecialchars($line) . "<br/>";
+	}
+    }
+    echo "Error converting from pnml to owfn";
+    die();
+}
 
 // create Makefile
 chdir($workdir);
 $handle = fopen("Makefile", "w+");
 fwrite($handle, "PATH := $(PATH):".$bindir."\n\n");
+if ($debug) echo "Executing " . $bindir."/sound ".$uuid.".pnml.owfn" . "<br/>";
 exec($bindir."/sound ".$uuid.".pnml.owfn", $output);
 foreach($output as $val) {
     fwrite($handle, $val."\n");
