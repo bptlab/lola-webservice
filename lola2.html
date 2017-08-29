@@ -1,0 +1,85 @@
+<html>
+
+<head><title>LoLA 2 as a service</title></head>
+
+<body>
+    <h1>LoLA 2 as a service</h1>
+
+    <p>
+      <label for="file">Import pnml file</label>
+      <input type="file" id="file" name="files"/>
+    </p>
+
+    <form action="lola2_new.php" method="POST">
+        <h2>Standard Analysis</h2>
+
+        <p>Input:</p>
+        <p>
+            <textarea name="input" id="standard_input" cols="50" rows="10"></textarea><br>
+        </p>
+        <p>Choices:</p>
+        <p>
+          <input type="checkbox" name="deadlocks" id="deadlocks"> <label for="deadlocks">Deadlocks</label>
+        </p>
+        <p>
+          <input type="checkbox" name="reversibility" id="reversibility"> <label for="reversibility">Reversibility</label>
+        </p>
+        <p>
+          <input type="checkbox" name="quasiliveness" id="quasiliveness"> <label for="quasiliveness">Quasiliveness</label>
+        </p>
+        <p>
+          <input type="checkbox" name="relaxed" id="relaxed"> <label for="relaxed">Relaxedness</label>
+        </p>
+        <p>
+          <input type="checkbox" name="boundedness" id="boundedness"> <label for="boundedness">Boundeness</label>
+        </p>
+        <p>
+          <input type="checkbox" name="liveness" id="liveness"> <label for="liveness">Liveness</label>
+        </p>
+
+        <p>
+          <input type="checkbox" name="dead_transition" id="dead_transition"> <label for="dead_transition">is Dead Transition</label>
+          <input type="text" name="dead_transition_name" id="dead_transition_name" placeholder="Name of the Transition to check">
+        </p>
+
+        <p>
+          <input type="checkbox" name="live_transition" id="live_transition"> <label for="live_transition">is Live Transition</label>
+          <input type="text" name="live_transition_name" id="live_transition_name" placeholder="Name of the Transition to check">
+        </p>
+
+
+        <p><input type="submit" value=" Submit "><input type="reset" value=" Reset "></p>
+    </form>
+
+    <form action="lola2.php" method="POST">
+        <h2>Own formular</h2>
+
+        <p>Input:</p>
+        <p>
+            <textarea name="input" id="custom_input" cols="50" rows="10"></textarea><br>
+        </p>
+        <p>Formula:</p>
+        <p>
+           <textarea name="formula" cols"50" rows="5"></textarea><br>
+        </p>
+
+        <p><input type="submit" value=" Submit "><input type="reset" value=" Reset "></p>
+    </form>
+
+    <!-- JS -->
+    <script>
+      function handleFileSelect(evt) {
+        var reader = new FileReader();
+        var file = evt.target.files[0];
+        reader.addEventListener("loadend", function(e){
+          document.getElementById("standard_input").innerHTML = e.srcElement.result;
+          document.getElementById("custom_input").innerHTML = e.srcElement.result;
+        });
+        reader.readAsBinaryString(file);
+      }
+
+      document.getElementById('file').addEventListener('change', handleFileSelect, false);
+    </script>
+</body>
+
+</html>

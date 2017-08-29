@@ -9,6 +9,7 @@ RUN apt-get update \
 # Copy "webapp" files
 COPY index.html /app/
 COPY lola.php /app/
+COPY lola2_new.php /app/
 
 # Prepare dirs
 RUN mkdir /opt/lola && \
@@ -19,11 +20,13 @@ RUN mkdir /opt/lola && \
 
 # Copy source files
 COPY lola-1.18.tar.gz /opt/lola/
+COPY lola-2.0.tar.gz /opt/lola/
 COPY pnapi.tar.gz /opt/lola/
 COPY bin/* /opt/lola/bin/
 COPY formula.cc.patch /opt/lola/
 
-# Unpack
+# Unpack LoLA 1
+# (LoLA 1 is still needed for pnapi)
 RUN cd /opt/lola/ \
     && tar xvfz lola-1.18.tar.gz \
     && cd lola-1.18 \
@@ -35,17 +38,23 @@ RUN cd /opt/lola \
     && patch lola-1.18/src/formula.cc formula.cc.patch \
     && echo "" > lola-1.18/doc/lola.texi
 
-# Build LoLA
+# Build LoLA 1
 RUN cd /opt/lola/lola-1.18/build \
     && CXXFLAGS=-fpermissive ../configure --prefix=/opt/lola \
-    && make -j4 all-configs
-
-# Install LoLA
-RUN cd /opt/lola/lola-1.18/build \
+    && make -j4 all-configs \
     && make install
-#    && find src -iname "lola*" -exec cp -v {} /opt/lola/bin/ \;
 
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/lola/bin
+
+#Build LoLA 2
+RUN cd /opt/lola/ \
+    && tar xvfz lola-2.0.tar.gz \
+    && cd lola-2.0 \
+    && mkdir build \
+    && cd build \
+    && ../configure \
+    && make \
+    && make install
 
 # Build pnapi
 RUN cd /opt/lola/ \
