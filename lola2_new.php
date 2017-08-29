@@ -1,48 +1,49 @@
 <?php
 
-$uuid=date("Ymd-His-".rand(0,10));
-$workdir="workdir/".$uuid;
-$rootdir="/var/www/lola";
-$bindir=$rootdir."/.lola/local/bin";
-$formulars = [
+$uuid = date("Ymd-His-".rand(0,10));
+$workdir = "workdir/".$uuid;
+$rootdir = "/var/www/lola";
+$bindir = $rootdir."/.lola/local/bin";
+$lola = "/usr/local/bin/lola";
+$checks = [
     "deadlocks" => [
-      "ischecked" => false,
-      "formularexpression" => "EF DEADLOCK",
-      "type" => "simple"
+      "isChecked" => false,
+      "formula" => "EF DEADLOCK",
+      "type" => "global"
     ],
     "reversibility" => [
-      "ischecked" => false,
-      "formularexpression" => "AGEF INITIAL",
-      "type" => "simple"
+      "isChecked" => false,
+      "formula" => "AGEF INITIAL",
+      "type" => "global"
     ],
     "quasiliveness" => [
-      "ischecked" => false,
+      "isChecked" => false,
       "command" => "quasiliveness",
-      "type" => "complex"
+      "type" => "all_transitions"
     ],
     "relaxed" => [
-      "ischecked" => false,
+      "isChecked" => false,
       "command" => "relaxed",
-      "type" => "complex"
+      "type" => "all_transitions"
     ],
     "liveness" => [
-      "ischecked" => false,
+      "isChecked" => false,
       "command" => "liveness",
-      "type" => "complex"
+      "type" => "all_transitions"
     ],
     "boundedness" => [
-      "ischecked" => false,
+      "isChecked" => false,
       "command" => "boundedness",
-      "type" => "complex"
+      "type" => "all_transitions"
     ],
     "dead_transition" => [
-      "ischecked" => false,
-      "formularexpression" => "AG NOT FIREABLE",
+      "isChecked" => false,
+      "formula" => "AG NOT FIREABLE",
       "type" => "single_transition"
     ],
     "live_transition" => [
-      "ischecked" => false,
-      "formularexpression" => "AG FIREABLE",
+      "isChecked" => false,
+      "formula" => "AG FIREABLE",
       "type" => "single_transition"
     ],
 ];
@@ -99,12 +100,12 @@ function deleteDirectory($dir) {
 }
 
 // create formular call for functions that do not need an extra lola-executable
-function make_simple_formular_request($key, $formular) {
+function make_simple_formular_request($key, $formula) {
   global $workdir;
   global $uuid;
   global $bindir;
   $handle = fopen($workdir."/".$uuid.$key.".formula", "w+");
-  fwrite($handle, stripslashes($formular));
+  fwrite($handle, stripslashes($formula));
   fclose($handle);
   exec($bindir."/lola --formula=".$workdir."/".$uuid.$key.".formula --quiet --json=/var/www/lola/".$workdir.$key."/output.json --path ".$workdir."/".$uuid.".pnml.lola", $path);
   $jsonResult[$key] = file_get_contents("/var/www/lola/".$workdir."/output.json");
@@ -121,12 +122,12 @@ function make_simple_formular_request($key, $formular) {
 }
 
 // create call for functions which needs a single transition
-function make_single_transition_request($key, $formular, $transition) {
+function make_single_transition_request($key, $formula, $transition) {
   global $workdir;
   global $uuid;
   global $bindir;
   $handle = fopen($workdir."/".$uuid.$key.".formula", "w+");
-  fwrite($handle, stripslashes($formular." (".$transition.")"));
+  fwrite($handle, stripslashes($formula." (".$transition.")"));
   fclose($handle);
   exec($bindir."/lola --formula=".$workdir."/".$uuid.$key.".formula --quiet --json=/var/www/lola/".$workdir.$key."/output.json --path ".$workdir."/".$uuid.".pnml.lola", $path);
   $jsonResult[$key] = file_get_contents("/var/www/lola/".$workdir."/output.json");
@@ -173,6 +174,8 @@ function prepare_complex_formular_requests() {
   chdir($rootdir);
 }
 
+// START OF APPLICATION LOGIC
+
 if (empty($_REQUEST)) {
     die("Empty request.");
 }
@@ -181,14 +184,16 @@ if (empty($_REQUEST['input'])) {
     die("Empty input");
 }
 
+// Which checks are requested?
 foreach($_REQUEST as $key => $value) {
-  foreach($formulars as $keyf => $valuef) {
+  foreach($checks as $keyf => $valuef) {
     if (strcmp($key, $keyf) == 0) {
-      $formulars[$keyf]['ischecked'] = true;
+      $checks[$keyf]['isChecked'] = true;
     }
   }
 }
 
+// Write input net to temp file
 mkdir($workdir);
 if (is_url($_REQUEST['input'])) {
     copy($_REQUEST['input'], $workdir."/".$uuid.".pnml");
@@ -198,23 +203,28 @@ if (is_url($_REQUEST['input'])) {
     fclose($handle);
 }
 
+// Convert PNML to LOLA
 exec($bindir."/petri -ipnml -olola ".$workdir."/".$uuid.".pnml");
 $jsonResult = [];
 $arrayResult = [];
 
-prepare_complex_formular_requests($workdir, $bindir, $uuid);
+//prepare_complex_formular_requests($workdir, $bindir, $uuid);
 
-foreach($formulars as $key => $formular) {
-    if($formular['ischecked']) {
-      switch($formular['type']) {
-        case "simple":
-          make_simple_formular_request($key, $formular['formularexpression']);
+// Execute each check
+foreach($checks as $key => $check) {
+    if($check['isChecked']) {
+      switch($check['type']) {
+        case "global":
+          make_simple_formular_request($key, $check['formula']);
           break;
-        case "complex":
-          make_complex_formular_request($key, $formular['command']);
+        case "all_transitions":
+          make_complex_formular_request($key, $check['command']);
           break;
         case "single_transition":
-          make_single_transition_request($key, $formular['formularexpression'], $_REQUEST[$key."_name"]);
+          make_single_transition_request($key, $check['formula'], $_REQUEST[$key."_name"]);
+          break;
+        default:
+          die("Unknown check");
           break;
       }
     }
