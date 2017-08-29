@@ -7,15 +7,15 @@
 
     <p>
       <label for="file">Import pnml file</label>
-      <input type="file" id="file" name="files"/>
+      <input type="file" id="file" name="files" />
     </p>
 
     <form action="lola2_new.php" method="POST">
-        <h2>Standard Analysis</h2>
+        <h2>Analysis</h2>
 
-        <p>Input:</p>
+        <p>PNML Input:</p>
         <p>
-            <textarea name="input" id="standard_input" cols="50" rows="10"></textarea><br>
+            <textarea name="input" id="input" cols="50" rows="10"></textarea><br>
         </p>
         <p>Choices:</p>
         <p>
@@ -47,20 +47,10 @@
           <input type="text" name="live_transition_name" id="live_transition_name" placeholder="Name of the Transition to check">
         </p>
 
-
-        <p><input type="submit" value=" Submit "><input type="reset" value=" Reset "></p>
-    </form>
-
-    <form action="lola2.php" method="POST">
-        <h2>Own formular</h2>
-
-        <p>Input:</p>
         <p>
-            <textarea name="input" id="custom_input" cols="50" rows="10"></textarea><br>
-        </p>
-        <p>Formula:</p>
-        <p>
-           <textarea name="formula" cols"50" rows="5"></textarea><br>
+          <input type="checkbox" name="custom_formula" id="custom_formula"> <label for="custom_formula">Check custom formula</label>
+          <br />
+           <textarea name="custom_formula_content" cols"50" rows="5"></textarea><br>
         </p>
 
         <p><input type="submit" value=" Submit "><input type="reset" value=" Reset "></p>
@@ -72,8 +62,7 @@
         var reader = new FileReader();
         var file = evt.target.files[0];
         reader.addEventListener("loadend", function(e){
-          document.getElementById("standard_input").innerHTML = e.srcElement.result;
-          document.getElementById("custom_input").innerHTML = e.srcElement.result;
+          document.getElementById("input").innerHTML = reader.result;
         });
         reader.readAsBinaryString(file);
       }
