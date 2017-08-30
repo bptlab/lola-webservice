@@ -1,9 +1,10 @@
 <?php
 
-$uuid = date("Ymd-His-".rand(0,10));
-$workdir = "workdir/".$uuid;
+// Please report all problems, thanks
+error_reporting(-1);
+
 $rootdir = "/var/www/lola";
-$bindir = $rootdir."/.lola/local/bin";
+$bindir = "/opt/lola/bin";
 $lola = "/usr/local/bin/lola";
 $checks = [
     "deadlocks" => [
@@ -99,6 +100,44 @@ function deleteDirectory($dir) {
     return rmdir($dir);
 }
 
+// Global check
+function check_global($lola_filename, $check_name, $formula) {
+  global $lola;
+  $json_filename = $lola_filename . "." . $check_name . ".json";
+  $process_output = [];
+  $return_code = 0;
+
+  // Run LoLA
+  exec($lola . " --formula='" . $formula . "' --json='" . $json_filename . "' '" . $lola_filename . "' 2>&1", $process_output, $return_code);
+
+  // Check if run was okay
+  if ($return_code != 0) {
+    echo "LoLA exited with code ". $return_code . "<br />";
+    foreach ($process_output as $line) {
+      echo htmlspecialchars($line) . "<br />";
+    }
+    die();
+  }
+
+  echo "<pre>"; print_r($process_output); echo "</pre>";
+
+  // Load and parse result JSON file
+  $string_result = file_get_contents($json_filename);
+  if ($string_result === FALSE)
+    die($check_name . ": Can't open result file " . $json_filename);
+
+  $json_result = json_decode($string_result, TRUE);
+
+  if (!isset($json_result["analysis"]) || !isset($json_result["analysis"]["result"])) {
+    echo "<pre>"; print_r($json_result); echo "</pre>";
+    die($check_name . ": malformed JSON result in " . $json_filename);
+  }
+
+  $retval = $json_result["analysis"]["result"] ? "true" : "false";
+  echo $check_name . ": " . $retval . "<br />";
+  return $retval;
+}
+
 // create formular call for functions that do not need an extra lola-executable
 function make_simple_formular_request($key, $formula) {
   global $workdir;
@@ -184,6 +223,14 @@ if (empty($_REQUEST['input'])) {
     die("Empty input");
 }
 
+$uuid = date("Ymd-His-".rand(0,10));
+$workdir = "/data/lola-workdir/".$uuid;
+
+mkdir($workdir);
+
+$pnml_input = stripslashes($_REQUEST['input']);
+$pnml_filename = $workdir."/".$uuid.".pnml";
+
 // Which checks are requested?
 foreach($_REQUEST as $key => $value) {
   foreach($checks as $keyf => $valuef) {
@@ -194,34 +241,62 @@ foreach($_REQUEST as $key => $value) {
 }
 
 // Write input net to temp file
-mkdir($workdir);
-if (is_url($_REQUEST['input'])) {
-    copy($_REQUEST['input'], $workdir."/".$uuid.".pnml");
-} else {
-    $handle = fopen($workdir."/".$uuid.".pnml", "w+");
-    fwrite($handle, stripslashes($_REQUEST['input']));
-    fclose($handle);
-}
+$handle = fopen($pnml_filename, "w+");
+if ($handle === FALSE)
+  die("Can't open temp file");
+fwrite($handle, $pnml_input);
+fclose($handle);
 
 // Convert PNML to LOLA
-exec($bindir."/petri -ipnml -olola ".$workdir."/".$uuid.".pnml");
+$return_code = null;
+$process_output = [];
+
+exec($bindir . "/petri -ipnml -olola ".$pnml_filename, $process_output, $return_code);
+if ($return_code != 0) {
+  echo "petri returned " . $return_code . "<br />";
+  foreach ($process_output as $line) {
+    echo htmlspecialchars($line) . "<br />";
+  }
+  die();
+}
 $jsonResult = [];
 $arrayResult = [];
 
-//prepare_complex_formular_requests($workdir, $bindir, $uuid);
+// Parse LOLA file to get list of transitions
+$lola_filename = $workdir."/".$uuid.".pnml.lola";
+$lola_content = file_get_contents($lola_filename);
+if ($lola_content === FALSE)
+  die("Can't open converted file");
+
+$matches = [];
+$count = preg_match_all(
+    '/\sTRANSITION\s+([^,;:()\t \n\r\{\}]+)\s/',
+    $lola_content,
+    $matches
+);
+if ($count == 0)
+  die ("No transitions found");
+
+$transitions = array();
+foreach ($matches[1] as $match) {
+  $transitions[] = htmlspecialchars($match);
+}
 
 // Execute each check
-foreach($checks as $key => $check) {
-    if($check['isChecked']) {
-      switch($check['type']) {
+foreach($checks as $check_name => $check_properties) {
+    if($check_properties['isChecked']) {
+      switch($check_properties['type']) {
         case "global":
-          make_simple_formular_request($key, $check['formula']);
+          check_global($lola_filename, $check_name, $check_properties['formula']);
+          //make_simple_formular_request($check_name, $check_properties['formula']);
           break;
         case "all_transitions":
-          make_complex_formular_request($key, $check['command']);
+          die("Unsupported check");
+          //make_complex_formular_request($check_name, $check_properties['command']);
           break;
         case "single_transition":
-          make_single_transition_request($key, $check['formula'], $_REQUEST[$key."_name"]);
+          die("Unsupported check");
+          //make_single_transition_request($check_name, $check_properties['formula'], $_REQUEST[$check_name."_name"]);
           break;
         default:
           die("Unknown check");
