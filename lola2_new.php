@@ -26,22 +26,22 @@ $checks = [
     ],
     "quasiliveness" => [
       "isChecked" => false,
-      "command" => "quasiliveness",
+      "formula" => "AGEF FIREABLE", // net satisfies quasiliveness if no transition is dead (= each transition can fire eventually)
       "type" => "all_transitions"
     ],
     "relaxed" => [
       "isChecked" => false,
-      "command" => "relaxed",
+      "formula" => "", // TODO FIXME
       "type" => "all_transitions"
     ],
     "liveness" => [
       "isChecked" => false,
-      "command" => "liveness",
+      "formula" => "", // TODO FIXME
       "type" => "all_transitions"
     ],
     "boundedness" => [
       "isChecked" => false,
-      "command" => "boundedness",
+      "formula" => "", // TODO FIXME
       "type" => "all_transitions"
     ],
     "dead_transition" => [
@@ -106,9 +106,7 @@ function exec_lola_check($lola_filename, $check_name, $formula) {
     die($check_name . ": malformed JSON result in " . $json_filename);
   }
 
-  $retval = $json_result["analysis"]["result"] ? "true" : "false";
-  echo $check_name . ": " . $retval . "<br />";
-  return $retval;
+  return (boolean)($json_result["analysis"]["result"]);
 }
 
 function lola_check_global($lola_filename, $check_name) {
@@ -120,13 +118,20 @@ function lola_check_global($lola_filename, $check_name) {
 function lola_check_all_transitions($lola_filename, $check_name) {
   global $checks;
   global $transitions;
-  die("Unsupported check");
+  foreach ($transitions as $transition_name) {
+    $ret = lola_check_single_transition($lola_filename, $check_name, $transition_name);
+    if (!$ret)
+      return false;
+  }
+  return true;
 }
 
 function lola_check_single_transition($lola_filename, $check_name, $transition_name) {
   global $checks;
+  $safe_transition_name = preg_replace("/\W/", "", $transition_name);
+  $individual_check_name = $check_name . "." . $safe_transition_name;
   $formula = $checks[$check_name]['formula'] . "(" . $transition_name . ")";
-  return exec_lola_check($lola_filename, $check_name, $formula);
+  return exec_lola_check($lola_filename, $individual_check_name, $formula);
 }
 
 // START OF APPLICATION LOGIC
@@ -150,6 +155,10 @@ $pnml_filename = $workdir."/".$uuid.".pnml";
 $dead_transition_name = htmlspecialchars($_REQUEST['dead_transition_name']);
 $live_transition_name = htmlspecialchars($_REQUEST['live_transition_name']);
 
+$custom_formula_content = "";
+if ($_REQUEST['custom_formula'])
+  $custom_formula_content = htmlspecialchars($_REQUEST['custom_formula_content']);
+
 // Which checks are requested?
 $num_checks = 0;
 foreach($_REQUEST as $key => $value) {
@@ -161,7 +170,7 @@ foreach($_REQUEST as $key => $value) {
   }
 }
 
-if ($num_checks == 0)
+if ($num_checks == 0 && !$custom_formula_content)
   die("No checks selected.");
 
 // Write input net to temp file
@@ -209,14 +218,13 @@ foreach ($matches[1] as $match) {
 // Execute each check
 foreach($checks as $check_name => $check_properties) {
     if($check_properties['isChecked']) {
-      $formula = "";
+      $result = false;
       switch($check_properties['type']) {
         case "global":
-          lola_check_global($lola_filename, $check_name);
-          //make_simple_formular_request($check_name, $check_properties['formula']);
+          $result = lola_check_global($lola_filename, $check_name);
           break;
         case "all_transitions":
-          lola_check_all_transitions($lola_filename, $check_name);
+          $result = lola_check_all_transitions($lola_filename, $check_name);
           break;
         case "single_transition":
           $transition_name = "";
@@ -231,13 +239,19 @@ foreach($checks as $check_name => $check_properties) {
               die("Unknown single-transition check");
               break;
           }
-          lola_check_single_transition($lola_filename, $check_name, $transition_name);
+          $result = lola_check_single_transition($lola_filename, $check_name, $transition_name);
           break;
         default:
           die("Unknown check");
           break;
       }
+      echo $check_name . " = " . ($result ? 'true' : 'false') . ";<br />\n";
     }
+}
+
+if ($custom_formula_content) {
+  $result = exec_lola_check($lola_filename, "custom", $custom_formula_content);
+  echo "custom_check" . " = " . ($result ? 'true' : 'false') . ";<br />\n";
 }
 
 ?>
