@@ -3,6 +3,13 @@
 // Please report all problems, thanks
 error_reporting(-1);
 
+//ini_set("display_errors", 1);
+//ini_set("track_errors", 1);
+//ini_set("html_errors", 1);
+
+// Set to 'true' to enable debug messages
+$debug_switch = false;
+
 $rootdir = "/var/www/lola";
 $bindir = "/opt/lola/bin";
 $lola = "/usr/local/bin/lola";
@@ -39,87 +46,53 @@ $checks = [
     ],
     "dead_transition" => [
       "isChecked" => false,
-      "formula" => "AG NOT FIREABLE",
+      "formula" => "AGEF NOT FIREABLE",
       "type" => "single_transition"
     ],
     "live_transition" => [
       "isChecked" => false,
-      "formula" => "AG FIREABLE",
+      "formula" => "AGEF FIREABLE",
       "type" => "single_transition"
     ],
 ];
 
-//ini_set("display_errors", 1);
-//ini_set("track_errors", 1);
-//ini_set("html_errors", 1);
+// Output debug messages to inline output and browser console
+function debug($data) {
+  global $debug_switch;
+  if (!$debug_switch)
+    return;
 
-function is_url($url){
-    $url = substr($url,-1) == "/" ? substr($url,0,-1) : $url;
-    if ( !$url || $url=="" ) return false;
-    if ( !( $parts = @parse_url( $url ) ) ) return false;
-    else {
-        if ( $parts["scheme"] != "http" && $parts["scheme"] != "https" && $parts["scheme"] != "ftp" && $parts["scheme"] != "gopher" ) return false;
-        else if ( !eregi( "^[0-9a-z]([-.]?[0-9a-z])*.[a-z]{2,4}$", $parts[host], $regs ) ) return false;
-        else if ( !eregi( "^([0-9a-z-]|[_])*$", $parts[user], $regs ) ) return false;
-        else if ( !eregi( "^([0-9a-z-]|[_])*$", $parts[pass], $regs ) ) return false;
-        else if ( !eregi( "^[0-9a-z/_.@~-]*$", $parts[path], $regs ) ) return false;
-        else if ( !eregi( "^[0-9a-z?&=#,]*$", $parts[query], $regs ) ) return false;
-    }
-    return true;
-}
+  // if (is_array($data))
+  //   echo "<script>console.log( 'Debug Objects: " . implode( ',', $data) . "' );</script>";
+  // else
+  //   echo "<script>console.log( 'Debug Objects: " . $data . "' );</script>";
 
-function debug_to_console($data) {
-    if (is_array($data))
-        $output = "<script>console.log( 'Debug Objects: " . implode( ',', $data) . "' );</script>";
-    else
-        $output = "<script>console.log( 'Debug Objects: " . $data . "' );</script>";
-
-    echo $output;
-}
-
-function deleteDirectory($dir) {
-    if (!file_exists($dir)) {
-        return true;
-    }
-
-    if (!is_dir($dir)) {
-        return unlink($dir);
-    }
-
-    foreach (scandir($dir) as $item) {
-        if ($item == '.' || $item == '..') {
-            continue;
-        }
-
-        if (!deleteDirectory($dir . DIRECTORY_SEPARATOR . $item)) {
-            return false;
-        }
-
-    }
-
-    return rmdir($dir);
+  if (is_array($data)) {
+    echo "<pre>"; print_r($data); echo "</pre>";
+  } else {
+    echo "<br />\n" . htmlspecialchars($data) . "<br />\n";
+  }
 }
 
 // Global check
-function check_global($lola_filename, $check_name, $formula) {
+function exec_lola_check($lola_filename, $check_name, $formula) {
   global $lola;
   $json_filename = $lola_filename . "." . $check_name . ".json";
   $process_output = [];
   $return_code = 0;
 
+  $lola_command = $lola . " --formula='" . $formula . "' --json='" . $json_filename . "' '" . $lola_filename . "' 2>&1";
+  debug("Running command " . $lola_command);
   // Run LoLA
-  exec($lola . " --formula='" . $formula . "' --json='" . $json_filename . "' '" . $lola_filename . "' 2>&1", $process_output, $return_code);
+  exec($lola_command, $process_output, $return_code);
+
+  debug($process_output);
 
   // Check if run was okay
   if ($return_code != 0) {
     echo "LoLA exited with code ". $return_code . "<br />";
-    foreach ($process_output as $line) {
-      echo htmlspecialchars($line) . "<br />";
-    }
     die();
   }
-
-  echo "<pre>"; print_r($process_output); echo "</pre>";
 
   // Load and parse result JSON file
   $string_result = file_get_contents($json_filename);
@@ -129,7 +102,7 @@ function check_global($lola_filename, $check_name, $formula) {
   $json_result = json_decode($string_result, TRUE);
 
   if (!isset($json_result["analysis"]) || !isset($json_result["analysis"]["result"])) {
-    echo "<pre>"; print_r($json_result); echo "</pre>";
+    debug($json_result);
     die($check_name . ": malformed JSON result in " . $json_filename);
   }
 
@@ -138,79 +111,22 @@ function check_global($lola_filename, $check_name, $formula) {
   return $retval;
 }
 
-// create formular call for functions that do not need an extra lola-executable
-function make_simple_formular_request($key, $formula) {
-  global $workdir;
-  global $uuid;
-  global $bindir;
-  $handle = fopen($workdir."/".$uuid.$key.".formula", "w+");
-  fwrite($handle, stripslashes($formula));
-  fclose($handle);
-  exec($bindir."/lola --formula=".$workdir."/".$uuid.$key.".formula --quiet --json=/var/www/lola/".$workdir.$key."/output.json --path ".$workdir."/".$uuid.".pnml.lola", $path);
-  $jsonResult[$key] = file_get_contents("/var/www/lola/".$workdir."/output.json");
-  $arrayResult[$key] = json_decode($jsonResult[$key], TRUE);
-
-  clearstatcache();
-  echo("<b>Check for ".$key."</b></br>");
-  if($arrayResult[$key]['analysis']['result']) {
-    echo nl2br("satisfied\n");
-  }
-  else {
-    echo nl2br("not satisfied\n");
-  }
+function lola_check_global($lola_filename, $check_name) {
+  global $checks;
+  $formula = $checks[$check_name]['formula'];
+  return exec_lola_check($lola_filename, $check_name, $formula);
 }
 
-// create call for functions which needs a single transition
-function make_single_transition_request($key, $formula, $transition) {
-  global $workdir;
-  global $uuid;
-  global $bindir;
-  $handle = fopen($workdir."/".$uuid.$key.".formula", "w+");
-  fwrite($handle, stripslashes($formula." (".$transition.")"));
-  fclose($handle);
-  exec($bindir."/lola --formula=".$workdir."/".$uuid.$key.".formula --quiet --json=/var/www/lola/".$workdir.$key."/output.json --path ".$workdir."/".$uuid.".pnml.lola", $path);
-  $jsonResult[$key] = file_get_contents("/var/www/lola/".$workdir."/output.json");
-  $arrayResult[$key] = json_decode($jsonResult[$key], TRUE);
-
-  clearstatcache();
-  echo("<b>Check for ".$key." ".$transition."</b></br>");
-  if($arrayResult[$key]['analysis']['result']) {
-    echo nl2br("satisfied\n");
-  }
-  else {
-    echo nl2br("not satisfied\n");
-  }
+function lola_check_all_transitions($lola_filename, $check_name) {
+  global $checks;
+  global $transitions;
+  die("Unsupported check");
 }
 
-// create call for functions that need an extra lola-executable (located in .lola/local/bin/)
-function make_complex_formular_request($key, $command) {
-  global $bindir;
-  set_time_limit(10);
-  system($bindir."/timeout3 -t 7 -d 2 " . "/usr/bin/make ".$command." >/dev/null 2>&1");
-  echo("<b>Check for ".$key."</b></br>");
-  exec($bindir."/process.sh", $finaloutput);
-  debug_to_console($finaloutput);
-  foreach($finaloutput as $val) {
-      echo($val."\n");
-  }
-}
-
-function prepare_complex_formular_requests() {
-  global $workdir;
-  global $bindir;
-  global $rootdir;
-  global $uuid;
-  exec($bindir."/petri -ipnml -oowfn ".$workdir."/".$uuid.".pnml");
-  // create Makefile
-  chdir($workdir);
-  $handle = fopen("Makefile", "w+");
-  fwrite($handle, "PATH := $(PATH):".$bindir."\n\n");
-  exec($bindir."/sound ".$uuid.".pnml.owfn", $output);
-  foreach($output as $val) {
-      fwrite($handle, $val."\n");
-  }
-  fclose($handle);
-  chdir($rootdir);
+function lola_check_single_transition($lola_filename, $check_name, $transition_name) {
+  global $checks;
+  $formula = $checks[$check_name]['formula'] . "(" . $transition_name . ")";
+  return exec_lola_check($lola_filename, $check_name, $formula);
 }
 
 // START OF APPLICATION LOGIC
@@ -231,14 +147,22 @@ mkdir($workdir);
 $pnml_input = stripslashes($_REQUEST['input']);
 $pnml_filename = $workdir."/".$uuid.".pnml";
 
+$dead_transition_name = htmlspecialchars($_REQUEST['dead_transition_name']);
+$live_transition_name = htmlspecialchars($_REQUEST['live_transition_name']);
+
 // Which checks are requested?
+$num_checks = 0;
 foreach($_REQUEST as $key => $value) {
   foreach($checks as $keyf => $valuef) {
     if (strcmp($key, $keyf) == 0) {
       $checks[$keyf]['isChecked'] = true;
+      $num_checks++;
     }
   }
 }
+
+if ($num_checks == 0)
+  die("No checks selected.");
 
 // Write input net to temp file
 $handle = fopen($pnml_filename, "w+");
@@ -285,18 +209,29 @@ foreach ($matches[1] as $match) {
 // Execute each check
 foreach($checks as $check_name => $check_properties) {
     if($check_properties['isChecked']) {
+      $formula = "";
       switch($check_properties['type']) {
         case "global":
-          check_global($lola_filename, $check_name, $check_properties['formula']);
+          lola_check_global($lola_filename, $check_name);
           //make_simple_formular_request($check_name, $check_properties['formula']);
           break;
         case "all_transitions":
-          die("Unsupported check");
-          //make_complex_formular_request($check_name, $check_properties['command']);
+          lola_check_all_transitions($lola_filename, $check_name);
           break;
         case "single_transition":
-          die("Unsupported check");
-          //make_single_transition_request($check_name, $check_properties['formula'], $_REQUEST[$check_name."_name"]);
+          $transition_name = "";
+          switch($check_name) {
+            case "dead_transition":
+              $transition_name = $dead_transition_name;
+              break;
+            case "live_transition":
+              $transition_name = $live_transition_name;
+              break;
+            default:
+              die("Unknown single-transition check");
+              break;
+          }
+          lola_check_single_transition($lola_filename, $check_name, $transition_name);
           break;
         default:
           die("Unknown check");
