@@ -1,5 +1,10 @@
 <?php
 
+//
+// CONFIGURATION
+//
+
+
 // Please report all problems, thanks
 error_reporting(-1);
 
@@ -10,9 +15,19 @@ error_reporting(-1);
 // Set to 'true' to enable debug messages
 $debug_switch = false;
 
-$rootdir = "/var/www/lola";
-$bindir = "/opt/lola/bin";
+// Location of 'petri' binary
+$petri = "/opt/lola/bin/petri";
+
+// Location of 'lola' (2.x) binary
 $lola = "/usr/local/bin/lola";
+
+// "UUID" generation for workdir
+$uuid = date("Ymd-His-".rand(0,10));
+
+// Location of workdir
+$workdir = "/data/lola-workdir/".$uuid;
+
+// Definition of checks
 $checks = [
     "deadlocks" => [
       "isChecked" => false,
@@ -56,16 +71,18 @@ $checks = [
     ],
 ];
 
-// Output debug messages to inline output and browser console
+
+
+//
+// FUNCTIONS
+//
+
+
+// Output debug messages to inline output
 function debug($data) {
   global $debug_switch;
   if (!$debug_switch)
     return;
-
-  // if (is_array($data))
-  //   echo "<script>console.log( 'Debug Objects: " . implode( ',', $data) . "' );</script>";
-  // else
-  //   echo "<script>console.log( 'Debug Objects: " . $data . "' );</script>";
 
   if (is_array($data)) {
     echo "<pre>"; print_r($data); echo "</pre>";
@@ -74,16 +91,16 @@ function debug($data) {
   }
 }
 
-// Global check
+// Execute LoLA with given formula and parse result
 function exec_lola_check($lola_filename, $check_name, $formula) {
   global $lola;
   $json_filename = $lola_filename . "." . $check_name . ".json";
   $process_output = [];
   $return_code = 0;
 
+  // Run LoLA
   $lola_command = $lola . " --formula='" . $formula . "' --json='" . $json_filename . "' '" . $lola_filename . "' 2>&1";
   debug("Running command " . $lola_command);
-  // Run LoLA
   exec($lola_command, $process_output, $return_code);
 
   debug($process_output);
@@ -106,15 +123,27 @@ function exec_lola_check($lola_filename, $check_name, $formula) {
     die($check_name . ": malformed JSON result in " . $json_filename);
   }
 
+  // Return analysis result as bool
   return (boolean)($json_result["analysis"]["result"]);
 }
 
+// Run a check on the whole net
 function lola_check_global($lola_filename, $check_name) {
   global $checks;
   $formula = $checks[$check_name]['formula'];
   return exec_lola_check($lola_filename, $check_name, $formula);
 }
 
+// Run a check on a single transition
+function lola_check_single_transition($lola_filename, $check_name, $transition_name) {
+  global $checks;
+  $safe_transition_name = preg_replace("/\W/", "", $transition_name);
+  $individual_check_name = $check_name . "." . $safe_transition_name;
+  $formula = $checks[$check_name]['formula'] . "(" . $transition_name . ")";
+  return exec_lola_check($lola_filename, $individual_check_name, $formula);
+}
+
+// Run a check on every transition individually
 function lola_check_all_transitions($lola_filename, $check_name) {
   global $checks;
   global $transitions;
@@ -126,16 +155,11 @@ function lola_check_all_transitions($lola_filename, $check_name) {
   return true;
 }
 
-function lola_check_single_transition($lola_filename, $check_name, $transition_name) {
-  global $checks;
-  $safe_transition_name = preg_replace("/\W/", "", $transition_name);
-  $individual_check_name = $check_name . "." . $safe_transition_name;
-  $formula = $checks[$check_name]['formula'] . "(" . $transition_name . ")";
-  return exec_lola_check($lola_filename, $individual_check_name, $formula);
-}
+//
+// APPLICATION LOGIC
+//
 
-// START OF APPLICATION LOGIC
-
+// Read input
 if (empty($_REQUEST)) {
     die("Empty request.");
 }
@@ -143,9 +167,6 @@ if (empty($_REQUEST)) {
 if (empty($_REQUEST['input'])) {
     die("Empty input");
 }
-
-$uuid = date("Ymd-His-".rand(0,10));
-$workdir = "/data/lola-workdir/".$uuid;
 
 mkdir($workdir);
 
@@ -184,7 +205,7 @@ fclose($handle);
 $return_code = null;
 $process_output = [];
 
-exec($bindir . "/petri -ipnml -olola ".$pnml_filename, $process_output, $return_code);
+exec($petri . " -ipnml -olola ".$pnml_filename, $process_output, $return_code);
 if ($return_code != 0) {
   echo "petri returned " . $return_code . "<br />";
   foreach ($process_output as $line) {
@@ -195,7 +216,7 @@ if ($return_code != 0) {
 $jsonResult = [];
 $arrayResult = [];
 
-// Parse LOLA file to get list of transitions
+// "Parse" LOLA file to get list of transitions
 $lola_filename = $workdir."/".$uuid.".pnml.lola";
 $lola_content = file_get_contents($lola_filename);
 if ($lola_content === FALSE)
@@ -227,6 +248,7 @@ foreach($checks as $check_name => $check_properties) {
           $result = lola_check_all_transitions($lola_filename, $check_name);
           break;
         case "single_transition":
+          // Ugly hack because every single-transition check has its own text input
           $transition_name = "";
           switch($check_name) {
             case "dead_transition":
@@ -245,10 +267,12 @@ foreach($checks as $check_name => $check_properties) {
           die("Unknown check");
           break;
       }
+      // Output check result
       echo $check_name . " = " . ($result ? 'true' : 'false') . ";<br />\n";
     }
 }
 
+// Run custom check
 if ($custom_formula_content) {
   $result = exec_lola_check($lola_filename, "custom", $custom_formula_content);
   echo "custom_check" . " = " . ($result ? 'true' : 'false') . ";<br />\n";
