@@ -76,7 +76,80 @@ $checks = [
 //
 // FUNCTIONS
 //
+function parse_lola_file($lola_contents) {
 
+  $token_list = [
+    ["type" => "PLACE",       "str" => "PLACE"],
+    ["type" => "MARKING",     "str" => "MARKING"],
+    ["type" => "SAFE",        "str" => "SAFE"],
+    ["type" => "NUMBER",      "str" => "NUMBER"],
+    ["type" => "TRANSITION",  "str" => "TRANSITION"],
+    ["type" => "CONSUME",     "str" => "CONSUME"],
+    ["type" => "PRODUCE",     "str" => "PRODUCE"],
+    ["type" => "STRONG",      "str" => "STRONG"],
+    ["type" => "WEAK",        "str" => "WEAK"],
+    ["type" => "FAIR",        "str" => "FAIR"],
+    ["type" => "LPAR",        "str" => "\("],
+    ["type" => "RPAR",        "str" => "\)"],
+    ["type" => "RPAR",        "str" => "\)"],
+    ["type" => "COMMA",       "str" => ","],
+    ["type" => "SEMICOLON",   "str" => ";"],
+    ["type" => "COLON",       "str" => ":"],
+    ["type" => "WHITESPACE",  "regex" => "/\A\s+\z/"],
+    ["type" => "number",      "regex" => "/\A-?[0-9]+\z/"],
+    ["type" => "identifier",  "regex" => "/\A[^,;:()\t \n\r\{\}]+\z/"],
+  ];
+
+  // remove comments
+  $lola_contents = preg_replace("/{[^}]*}/", "", $lola_contents);
+
+  $token_stack = [];
+
+  $token = "";
+  $next_char = "";
+  $last_match_type = "";
+  $last_match_value = "";
+  $i = 0;
+
+  while($i < strlen($lola_contents)) {
+    //$token = $token . $next_char;
+    echo "token is '" . $token . "'<br />";
+    $still_matching = false;
+    foreach ($token_list as $token_entry) {
+      if (isset($token_entry["str"])) {
+          if(substr($token_entry["str"], 0, strlen($token)) == $token) {
+            echo "str match: " . $token_entry["type"] . "<br />";
+            $still_matching = true;
+            $last_match_type = $token_entry["type"];
+            $last_match_value = $token;
+            break;
+          }
+      } else { // regex
+        if (preg_match($token_entry["regex"], $token) != FALSE) {
+          echo "match " . $token_entry["type"] . "<br />";
+          $still_matching = true;
+          $last_match_type = $token_entry["type"];
+          $last_match_value = $token;
+          break;
+        }
+      }
+    }
+
+    if ($still_matching) {
+      $next_char = $lola_contents[$i];
+      $i++;
+      echo "reading '" . $next_char . "'<br />";
+      $token = $token . $next_char;
+    } else {
+      echo "not matching anymore, last match was " . $last_match_type . "<br />";
+
+      if ($last_match_type != "WHITESPACE")
+        $token_stack[] = ["type" => $last_match_type, "value" => $last_match_value];
+
+      $token = $next_char;
+    }
+  }
+}
 
 // Output debug messages to inline output
 function debug($data) {
@@ -169,6 +242,7 @@ if (empty($_REQUEST['input'])) {
 }
 
 mkdir($workdir);
+echo $workdir . "<br />";
 
 $pnml_input = stripslashes($_REQUEST['input']);
 $pnml_filename = $workdir."/".$uuid.".pnml";
@@ -222,18 +296,30 @@ $lola_content = file_get_contents($lola_filename);
 if ($lola_content === FALSE)
   die("Can't open converted file");
 
+parse_lola_file($lola_content);
+die("breakpoint");
+
 $matches = [];
-$count = preg_match_all(
-    '/\sTRANSITION\s+([^,;:()\t \n\r\{\}]+)\s/',
-    $lola_content,
-    $matches
-);
+$transition_regex = '/\sTRANSITION\s+([^,;:()\t \n\r\{\}]+)\s/';
+$count = preg_match_all($transition_regex, $lola_content, $matches);
 if ($count == 0)
   die ("No transitions found");
 
 $transitions = array();
 foreach ($matches[1] as $match) {
   $transitions[] = htmlspecialchars($match);
+}
+
+// Extract initial markings
+$matches = [];
+$marking_regex = '^\s*MARKING\s*([^,;:()\t \n\r\{\}]+):1\s*;';
+$count = preg_match_all($marking_regex, $lola_content, $matches);
+if ($count != 1)
+  die ("No initial markings or too many found! There must be exactly one initial marking.");
+
+foreach ($matches[1] as $match) {
+  echo "Initial marking: " . $match . "<br />";
+  //$transitions[] = htmlspecialchars($match);
 }
 
 // Execute each check
