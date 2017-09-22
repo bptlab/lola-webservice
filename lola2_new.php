@@ -111,6 +111,7 @@ function parse_lola_file($lola_contents) {
   $last_match_value = "";
   $i = 0;
 
+  // Read characters one by one and extract tokens
   while($i < strlen($lola_contents)) {
     //$token = $token . $next_char;
     echo "token is '" . $token . "'<br />";
@@ -146,9 +147,17 @@ function parse_lola_file($lola_contents) {
       if ($last_match_type != "WHITESPACE")
         $token_stack[] = ["type" => $last_match_type, "value" => $last_match_value];
 
+      echo "Stack is now: ";
+      foreach ($token_stack as $token_found) {
+        echo $token_found["value"] . " ";
+      }
+      echo "<br /><br />";
+
       $token = $next_char;
     }
   }
+
+  // Read tokens and create parse tree
 }
 
 // Output debug messages to inline output
