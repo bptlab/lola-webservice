@@ -51,12 +51,14 @@ $checks = [
         return lola_check_all_transitions("quasiliveness", "AGEF FIREABLE");
       }
     ],
-    "relaxed" => [
+    "relaxed" => [ // TODO FIXME
       "isChecked" => false,
-      "formula" => "", // TODO FIXME
-      "type" => "all_transitions"
+      "type" => "all_transitions",
+      "function" => function() {
+        return lola_check_relaxed_soundness();
+      }
     ],
-    "liveness" => [
+    "liveness" => [ // TODO FIXME is this the exact same as quasiliveness?
       "isChecked" => false,
       "formula" => "", // TODO FIXME
       "type" => "all_transitions"
@@ -195,7 +197,7 @@ function parse_lola_file($lola_contents) {
     ];
   }
 
-  // Determine source place(s)
+  // Determine source place(s) (no incoming edges)
   $source_place_candidates = $places;
   $transition_target_places = [];
   foreach ($transitions as $transition) {
@@ -205,7 +207,7 @@ function parse_lola_file($lola_contents) {
   }
   $source_places = array_diff($source_place_candidates, $transition_target_places);
 
-  // Determine sink place(s)
+  // Determine sink place(s) (no outgoing edges)
   $sink_place_candidates = $places;
   $transition_source_places = [];
   foreach ($transitions as $transition) {
@@ -283,8 +285,6 @@ function lola_check_global($check_name, $formula) {
 
 // Run a check on a single transition
 function lola_check_single_transition($check_name, $formula, $transition_name) {
-  global $lola_filename;
-  global $checks;
   $safe_transition_name = preg_replace("/\W/", "", $transition_name);
   $individual_check_name = $check_name . "." . $safe_transition_name;
   $formula = $formula . "(" . $transition_name . ")";
@@ -293,21 +293,43 @@ function lola_check_single_transition($check_name, $formula, $transition_name) {
 
 // Run a check on every transition individually
 function lola_check_all_transitions($check_name, $formula) {
-  global $lola_filename;
-  global $checks;
-  global $transitions;
-  foreach ($transitions as $transition_name) {
-    $ret = lola_check_single_transition($check_name, $formula, $transition_name);
+  global $petrinet;
+  foreach ($petrinet["transitions"] as $transition) {
+    $ret = lola_check_single_transition($check_name, $formula, $transition["id"]);
     if (!$ret)
       return false;
   }
   return true;
 }
 
-// Run check for boundedness
-function lola_check_boundedness($check_name) {
+function lola_check_relaxed_soundness() {
   global $lola_filename;
-  global $checks;
+  global $petrinet;
+  if (count($petrinet["source_places"]) != 1) {
+    die("The petri net has zero or more than one source places and therefore is no workflow net");
+  }
+  if (count($petrinet["sink_places"]) != 1) {
+    die("The petri net has zero or more than one sink places and therefore is no workflow net");
+  }
+  if (count($petrinet["markings"]) != 1) {
+    die("The petri net has zero or more than one initial markings and therefore is no workflow net");
+  }
+  // TODO FIXME
+  die("TODO implement relaxed soundness");
+}
+
+function lola_check_boundedness() {
+  global $petrinet;
+  foreach ($petrinet["places"] as $place) {
+    $safe_place_name = preg_replace("/\W/", "", $place);
+    $individual_check_name = "boundedness" . "." . $safe_place_name;
+    $formula = "AG " . $place . " < oo";
+    $extra_parameters = "--encoder=full --search=cover";
+    $ret = exec_lola_check($individual_check_name, $formula, $extra_parameters);
+    if (!ret)
+      return false;
+  }
+  return true;
 }
 
 //
