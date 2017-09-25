@@ -31,18 +31,25 @@ $workdir = "/data/lola-workdir/".$uuid;
 $checks = [
     "deadlocks" => [
       "isChecked" => false,
-      "formula" => "EF DEADLOCK",
-      "type" => "global"
+      "type" => "global",
+      "function" => function() {
+        return lola_check_global("deadlocks", "EF DEADLOCK");
+      }
     ],
     "reversibility" => [
       "isChecked" => false,
-      "formula" => "AGEF INITIAL",
-      "type" => "global"
+      "type" => "global",
+      "function" => function() {
+        return lola_check_global("reversibility", "AGEF INITIAL");
+      }
     ],
     "quasiliveness" => [
       "isChecked" => false,
-      "formula" => "AGEF FIREABLE", // net satisfies quasiliveness if no transition is dead (= each transition can fire eventually)
-      "type" => "all_transitions"
+      "type" => "global",
+      "function" => function() {
+        // net satisfies quasiliveness if no transition is dead (= each transition can fire eventually)
+        return lola_check_all_transitions("quasiliveness", "AGEF FIREABLE");
+      }
     ],
     "relaxed" => [
       "isChecked" => false,
@@ -62,12 +69,18 @@ $checks = [
     "dead_transition" => [
       "isChecked" => false,
       "formula" => "AGEF NOT FIREABLE",
-      "type" => "single_transition"
+      "type" => "single_transition",
+      "function" => function($transition) {
+        return lola_check_single_transition("dead_transition", "AGEF NOT FIREABLE", $transition);
+      }
     ],
     "live_transition" => [
       "isChecked" => false,
       "formula" => "AGEF FIREABLE",
-      "type" => "single_transition"
+      "type" => "single_transition",
+      "function" => function($transition) {
+        return lola_check_single_transition("live_transition", "AGEF FIREABLE", $transition);
+      }
     ],
 ];
 
@@ -182,15 +195,35 @@ function parse_lola_file($lola_contents) {
     ];
   }
 
+  // Determine source place(s)
+  $source_place_candidates = $places;
+  $transition_target_places = [];
+  foreach ($transitions as $transition) {
+    foreach ($transition["produce"] as $target) {
+      $transition_target_places[] = $target["place"];
+    }
+  }
+  $source_places = array_diff($source_place_candidates, $transition_target_places);
+
+  // Determine sink place(s)
+  $sink_place_candidates = $places;
+  $transition_source_places = [];
+  foreach ($transitions as $transition) {
+    foreach ($transition["consume"] as $source) {
+      $transition_source_places[] = $target["place"];
+    }
+  }
+  $sink_places = array_diff($sink_place_candidates, $transition_source_places);
+
   $petrinet = [
     "places" => $places,
     "markings" => $markings,
     "transitions" => $transitions,
+    "source_places" => $source_places,
+    "sink_places" => $sink_places,
   ];
 
-  echo "<pre>";
-  print_r($petrinet);
-  echo "</pre>";
+  return $petrinet;
 }
 
 // Output debug messages to inline output
@@ -207,14 +240,15 @@ function debug($data) {
 }
 
 // Execute LoLA with given formula and parse result
-function exec_lola_check($lola_filename, $check_name, $formula) {
+function exec_lola_check($check_name, $formula, $extra_parameters = "") {
+  global $lola_filename;
   global $lola;
   $json_filename = $lola_filename . "." . $check_name . ".json";
   $process_output = [];
   $return_code = 0;
 
   // Run LoLA
-  $lola_command = $lola . " --formula='" . $formula . "' --json='" . $json_filename . "' '" . $lola_filename . "' 2>&1";
+  $lola_command = $lola . " " . $extra_parameters . " --formula='" . $formula . "' --json='" . $json_filename . "' '" . $lola_filename . "' 2>&1";
   debug("Running command " . $lola_command);
   exec($lola_command, $process_output, $return_code);
 
@@ -243,31 +277,37 @@ function exec_lola_check($lola_filename, $check_name, $formula) {
 }
 
 // Run a check on the whole net
-function lola_check_global($lola_filename, $check_name) {
-  global $checks;
-  $formula = $checks[$check_name]['formula'];
-  return exec_lola_check($lola_filename, $check_name, $formula);
+function lola_check_global($check_name, $formula) {
+  return exec_lola_check($check_name, $formula);
 }
 
 // Run a check on a single transition
-function lola_check_single_transition($lola_filename, $check_name, $transition_name) {
+function lola_check_single_transition($check_name, $formula, $transition_name) {
+  global $lola_filename;
   global $checks;
   $safe_transition_name = preg_replace("/\W/", "", $transition_name);
   $individual_check_name = $check_name . "." . $safe_transition_name;
-  $formula = $checks[$check_name]['formula'] . "(" . $transition_name . ")";
-  return exec_lola_check($lola_filename, $individual_check_name, $formula);
+  $formula = $formula . "(" . $transition_name . ")";
+  return exec_lola_check($individual_check_name, $formula);
 }
 
 // Run a check on every transition individually
-function lola_check_all_transitions($lola_filename, $check_name) {
+function lola_check_all_transitions($check_name, $formula) {
+  global $lola_filename;
   global $checks;
   global $transitions;
   foreach ($transitions as $transition_name) {
-    $ret = lola_check_single_transition($lola_filename, $check_name, $transition_name);
+    $ret = lola_check_single_transition($check_name, $formula, $transition_name);
     if (!$ret)
       return false;
   }
   return true;
+}
+
+// Run check for boundedness
+function lola_check_boundedness($check_name) {
+  global $lola_filename;
+  global $checks;
 }
 
 //
@@ -293,7 +333,7 @@ $dead_transition_name = htmlspecialchars($_REQUEST['dead_transition_name']);
 $live_transition_name = htmlspecialchars($_REQUEST['live_transition_name']);
 
 $custom_formula_content = "";
-if ($_REQUEST['custom_formula'])
+if (isset($_REQUEST['custom_formula']))
   $custom_formula_content = htmlspecialchars($_REQUEST['custom_formula_content']);
 
 // Which checks are requested?
@@ -338,31 +378,7 @@ $lola_content = file_get_contents($lola_filename);
 if ($lola_content === FALSE)
   die("Can't open converted file");
 
-parse_lola_file($lola_content);
-die("breakpoint");
-
-$matches = [];
-$transition_regex = '/\sTRANSITION\s+([^,;:()\t \n\r\{\}]+)\s/';
-$count = preg_match_all($transition_regex, $lola_content, $matches);
-if ($count == 0)
-  die ("No transitions found");
-
-$transitions = array();
-foreach ($matches[1] as $match) {
-  $transitions[] = htmlspecialchars($match);
-}
-
-// Extract initial markings
-$matches = [];
-$marking_regex = '^\s*MARKING\s*([^,;:()\t \n\r\{\}]+):1\s*;';
-$count = preg_match_all($marking_regex, $lola_content, $matches);
-if ($count != 1)
-  die ("No initial markings or too many found! There must be exactly one initial marking.");
-
-foreach ($matches[1] as $match) {
-  echo "Initial marking: " . $match . "<br />";
-  //$transitions[] = htmlspecialchars($match);
-}
+$petrinet = parse_lola_file($lola_content);
 
 // Execute each check
 foreach($checks as $check_name => $check_properties) {
@@ -370,10 +386,8 @@ foreach($checks as $check_name => $check_properties) {
       $result = false;
       switch($check_properties['type']) {
         case "global":
-          $result = lola_check_global($lola_filename, $check_name);
-          break;
         case "all_transitions":
-          $result = lola_check_all_transitions($lola_filename, $check_name);
+          $result = $check_properties['function']();
           break;
         case "single_transition":
           // Ugly hack because every single-transition check has its own text input
@@ -389,7 +403,7 @@ foreach($checks as $check_name => $check_properties) {
               die("Unknown single-transition check");
               break;
           }
-          $result = lola_check_single_transition($lola_filename, $check_name, $transition_name);
+          $result = $check_properties['function']($transition_name);
           break;
         default:
           die("Unknown check");
