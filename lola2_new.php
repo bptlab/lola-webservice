@@ -77,6 +77,7 @@ $checks = [
 // FUNCTIONS
 //
 
+// Parse LoLA file into associative array
 function parse_lola_file($lola_contents) {
   // Place list regex: Produces a named capturing group "placelist" that contains the list of places
   //   (comma-separated plus optional whitespace, e.g. "p1, p2,p3")
@@ -181,151 +182,15 @@ function parse_lola_file($lola_contents) {
     ];
   }
 
+  $petrinet = [
+    "places" => $places,
+    "markings" => $markings,
+    "transitions" => $transitions,
+  ];
+
   echo "<pre>";
-  print_r($transitions);
+  print_r($petrinet);
   echo "</pre>";
-}
-
-function parse_lola_file2($lola_contents) {
-
-  $token_definitions = [
-    ["type" => "PLACE",       "str" => "PLACE"],
-    ["type" => "MARKING",     "str" => "MARKING"],
-    ["type" => "SAFE",        "str" => "SAFE"],
-    ["type" => "NUMBER",      "str" => "NUMBER"],
-    ["type" => "TRANSITION",  "str" => "TRANSITION"],
-    ["type" => "CONSUME",     "str" => "CONSUME"],
-    ["type" => "PRODUCE",     "str" => "PRODUCE"],
-    ["type" => "STRONG",      "str" => "STRONG"],
-    ["type" => "WEAK",        "str" => "WEAK"],
-    ["type" => "FAIR",        "str" => "FAIR"],
-    ["type" => "LPAR",        "str" => "\("],
-    ["type" => "RPAR",        "str" => "\)"],
-    ["type" => "RPAR",        "str" => "\)"],
-    ["type" => "COMMA",       "str" => ","],
-    ["type" => "SEMICOLON",   "str" => ";"],
-    ["type" => "COLON",       "str" => ":"],
-    ["type" => "WHITESPACE",  "regex" => "/\A\s+\z/"],
-    ["type" => "number",      "regex" => "/\A-?[0-9]+\z/"],
-    ["type" => "identifier",  "regex" => "/\A[^,;:()\t \n\r\{\}]+\z/"],
-  ];
-
-  // remove comments
-  $lola_contents = preg_replace("/{[^}]*}/", "", $lola_contents);
-
-  $token_stream = [];
-
-  $token = "";
-  $next_char = "";
-  $last_match_type = "";
-  $last_match_value = "";
-  $last_match_complete = false;
-  $i = 0;
-
-  // Read characters one by one and extract tokens
-  while($i < strlen($lola_contents)) {
-    //$token = $token . $next_char;
-    echo "token is '" . $token . "'<br />";
-    $still_matching = false;
-    $match_complete = false;
-    foreach ($token_definitions as $token_definition) {
-      if (isset($token_definition["str"])) {
-          if(substr($token_definition["str"], 0, strlen($token)) == $token) {
-            echo "str match: " . $token_definition["type"] . "<br />";
-            $still_matching = true;
-            $last_match_type = $token_definition["type"];
-            $last_match_value = $token;
-            if (strlen($token) >= strlen($token_definition["str"])) {
-              $match_complete = true;
-              break;
-            }
-          }
-      } else { // regex
-        if (preg_match($token_definition["regex"], $token) != FALSE) {
-          echo "match " . $token_definition["type"] . "<br />";
-          $still_matching = true;
-          $last_match_type = $token_definition["type"];
-          $last_match_value = $token;
-          $match_complete = true;
-          break;
-        }
-      }
-    }
-
-    if ($still_matching) {
-      $next_char = $lola_contents[$i];
-      $i++;
-      echo "reading '" . $next_char . "'<br />";
-      $token = $token . $next_char;
-    } else {
-      echo "not matching anymore. ";
-      if (!$last_match_complete) {
-        echo "Last match was incomplete.<br />";
-        die("SYNTAX ERROR");
-      }
-      echo "Last match was " . $last_match_type . "<br />";
-
-      if ($last_match_type != "WHITESPACE")
-        $token_stream[] = ["type" => $last_match_type, "value" => $last_match_value];
-
-
-
-      echo "Token stream is now: ";
-      foreach ($token_stream as $token_found) {
-        echo $token_found["value"] . " ";
-      }
-      echo "<br /><br />";
-
-      $token = $next_char;
-    }
-    $last_match_complete = $match_complete;
-  }
-
-  if (count($token_stream) == 0)
-    die ("Empty token stream");
-
-  // Read tokens and create parse tree
-  $grammar = [
-    ["lhs" => "net", "rhs" => ["PLACE", "place_lists", "MARKING", "marking_list", "SEMICOLON", "transition_list"]],
-    ["lhs" => "net", "rhs" => ["PLACE", "place_lists", "MARKING", "SEMICOLON", "transition_list"]],
-
-    ["lhs" => "place_lists", "rhs" => ["place_lists", "place_list", "SEMICOLON"]],
-    ["lhs" => "place_lists", "rhs" => ["place_list", "SEMICOLON"]],
-
-    ["lhs" => "place_list", "rhs" => ["nodeident"]],
-    ["lhs" => "place_list", "rhs" => ["place_list", "COMMA", "nodeident"]],
-
-    ["lhs" => "nodeident", "rhs" => ["identifier"]],
-    ["lhs" => "nodeident", "rhs" => ["number"]],
-
-    ["lhs" => "marking_list", "rhs" => ["marking"]],
-    ["lhs" => "marking_list", "rhs" => ["marking_list", "COMMA", "marking"]],
-
-    ["lhs" => "marking", "rhs" => ["nodeident"]],
-    ["lhs" => "marking", "rhs" => ["nodeident", "COLON", "number"]],
-
-    ["lhs" => "transition_list", "rhs" => ["TRANSITION", "nodeident", "CONSUME", "marking_list", "SEMICOLON", "PRODUCE", "marking_list", "SEMICOLON"]],
-    ["lhs" => "transition_list", "rhs" => ["TRANSITION", "nodeident", "CONSUME", "SEMICOLON", "PRODUCE", "marking_list", "SEMICOLON"]],
-    ["lhs" => "transition_list", "rhs" => ["TRANSITION", "nodeident", "CONSUME", "marking_list", "SEMICOLON", "PRODUCE", "SEMICOLON"]],
-    ["lhs" => "transition_list", "rhs" => ["TRANSITION", "nodeident", "CONSUME", "SEMICOLON", "PRODUCE", "SEMICOLON"]],
-  ];
-
-  $token_stack = [];
-  while (count($token_stream) > 0) {
-    $changed = false;
-    //
-    // foreach ($grammar as $grammar_rule) {
-    //   for ($i = 0; $i < count($grammar_rule["rhs"]))
-    // }
-
-    if (!$changed) {
-      echo "Cannot reduce anymore. ";
-      $shifted_token = array_shift($token_stream);
-      echo "Shifting '" . $shifted_token . "'<br />";
-      array_push($token_stack, $shifted_token);
-      $changed = true;
-    }
-  }
 }
 
 // Output debug messages to inline output
