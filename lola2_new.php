@@ -76,9 +76,119 @@ $checks = [
 //
 // FUNCTIONS
 //
-function parse_lola_file($lola_contents) {
 
-  $token_list = [
+function parse_lola_file($lola_contents) {
+  // Place list regex: Produces a named capturing group "placelist" that contains the list of places
+  //   (comma-separated plus optional whitespace, e.g. "p1, p2,p3")
+  $place_list_regex = "/PLACE\s+(?P<placelist>(([^,;:()\t \n\r\{\}]+)(?:,\s*){0,1})*);/";
+  // Marking list regex: Produces a named capturing group "markinglist" that contains the list of markings
+  //   (comma-separated plus optional whitespace, e.g. "p1:1, p2,p3:3")
+  $marking_list_regex = "/MARKING\s+(?P<markinglist>([^,;:()\t \n\r\{\}]+(\s*:\s*[0-9])?(,\s*)?)*);/";
+  // Transition list regex: Produces three named capturing groups (will match for each transition individually):
+  // Capturing group "transition" contains the name of the transition (e.g. "t1")
+  // Capturing group "consume" contains the list of places that this transition consumes from
+  //   (comma-separated plus optional whitespace, e.g. "p1:1, p2,p3:3")
+  // Capturing group "produce" contains the list of places that this transition produces to
+  //   (comma-separated plus optional whitespace, e.g. "p1:1, p2,p3:3")
+  $transition_list_regex = "/TRANSITION\s+(?P<transition>[^,;:()\t \n\r\{\}]+)\s+CONSUME\s*(?P<consume>(?:[^,;:()\t \n\r\{\}]+(?:\s*:\s*[0-9])?(?:,\s*)?)*)?;\s+PRODUCE\s*(?P<produce>(?:[^,;:()\t \n\r\{\}]+(?:\s*:\s*[0-9])?(?:,\s*)?)*)?;/";
+
+  // Extract places
+  $matches = [];
+  $result = preg_match($place_list_regex, $lola_contents, $matches);
+  if ($result === FALSE)
+    die ("Error matching place list regex");
+  if ($result === 0)
+    die ("Syntax error in LoLA file: Couldn't find any places");
+  if (!isset($matches["placelist"]))
+    die ("Named capture group for place list is non-existent!");
+
+  $placelist = str_replace(" ", "", $matches["placelist"]);
+  $places = explode(",", $placelist);
+  if (count($places) == 0)
+    die ("Could not extract places from LoLA file");
+
+  // Extract initial markings
+  $matches = [];
+  $result = preg_match($marking_list_regex, $lola_contents, $matches);
+  if ($result === FALSE)
+    die ("Error matching marking list regex");
+  if ($result === 0)
+    die ("Syntax error in LoLA file: Couldn't find any markings");
+  if (!isset($matches["markinglist"]))
+    die ("Named capture group for marking list is non-existent!");
+
+  $markinglist = str_replace(" ", "", $matches["markinglist"]);
+  $markings = explode(",", $markinglist);
+  if (count($markings) == 0)
+    die ("Could not extract markings from LoLA file");
+
+  // Extract transitions
+  $matches = [];
+  $result = preg_match_all($transition_list_regex, $lola_contents, $matches, PREG_SET_ORDER);
+  if ($result === FALSE)
+    die ("Error matching transition regex");
+  if ($result === 0)
+    die ("Syntax error in LoLA file: Couldn't find any transitions");
+
+  $transitions = [];
+  foreach($matches as $sub_matches) {
+    if (!isset($sub_matches["transition"]))
+      die ("Named capture group for transition is non-existent");
+    if (!isset($sub_matches["consume"]))
+      die ("Named capture group for transition consume list is non-existent");
+    if (!isset($sub_matches["produce"]))
+      die ("Named capture group for transition produce list is non-existent");
+    $transition = htmlspecialchars($sub_matches["transition"]);
+    $consume_raw = str_replace(" ", "", $sub_matches["consume"]);
+    $consume_list_raw = explode(",", $consume_raw);
+    if (count($consume_list_raw) == 0)
+      die ("Could not extract consume list from LoLA file");
+    $produce_raw = str_replace(" ", "", $sub_matches["produce"]);
+    $produce_list_raw = explode(",", $produce_raw);
+    if (count($produce_list_raw) == 0)
+      die ("Could not extract produce list from LoLA file");
+
+    // Extract place name and arc weight for consume list
+    $consume = [];
+    foreach ($consume_list_raw as $consume_entry) {
+      $consume_entry = htmlspecialchars($consume_entry);
+      $pos = strpos($consume_entry, ":");
+      if ($pos === FALSE) {
+        // Implicit count of 1
+        $consume[] = ["place" => $consume_entry, "weight" => "1"];
+      } else {
+        $consume[] = ["place" => substr($consume_entry, 0, $pos), "weight" => substr($consume_entry, $pos+1)];
+      }
+    }
+
+    // Extract place name and arc weight for produce list
+    $produce = [];
+    foreach ($produce_list_raw as $produce_entry) {
+      $produce_entry = htmlspecialchars($produce_entry);
+      $pos = strpos($produce_entry, ":");
+      if ($pos === FALSE) {
+        // Implicit count of 1
+        $produce[] = ["place" => $produce_entry, "weight" => "1"];
+      } else {
+        $produce[] = ["place" => substr($produce_entry, 0, $pos), "weight" => substr($produce_entry, $pos+1)];
+      }
+    }
+
+    $transitions[] = [
+      "id" => $transition,
+      "consume" => $consume,
+      "produce" => $produce,
+    ];
+  }
+
+  echo "<pre>";
+  print_r($transitions);
+  echo "</pre>";
+}
+
+function parse_lola_file2($lola_contents) {
+
+  $token_definitions = [
     ["type" => "PLACE",       "str" => "PLACE"],
     ["type" => "MARKING",     "str" => "MARKING"],
     ["type" => "SAFE",        "str" => "SAFE"],
@@ -103,12 +213,13 @@ function parse_lola_file($lola_contents) {
   // remove comments
   $lola_contents = preg_replace("/{[^}]*}/", "", $lola_contents);
 
-  $token_stack = [];
+  $token_stream = [];
 
   $token = "";
   $next_char = "";
   $last_match_type = "";
   $last_match_value = "";
+  $last_match_complete = false;
   $i = 0;
 
   // Read characters one by one and extract tokens
@@ -116,21 +227,26 @@ function parse_lola_file($lola_contents) {
     //$token = $token . $next_char;
     echo "token is '" . $token . "'<br />";
     $still_matching = false;
-    foreach ($token_list as $token_entry) {
-      if (isset($token_entry["str"])) {
-          if(substr($token_entry["str"], 0, strlen($token)) == $token) {
-            echo "str match: " . $token_entry["type"] . "<br />";
+    $match_complete = false;
+    foreach ($token_definitions as $token_definition) {
+      if (isset($token_definition["str"])) {
+          if(substr($token_definition["str"], 0, strlen($token)) == $token) {
+            echo "str match: " . $token_definition["type"] . "<br />";
             $still_matching = true;
-            $last_match_type = $token_entry["type"];
+            $last_match_type = $token_definition["type"];
             $last_match_value = $token;
-            break;
+            if (strlen($token) >= strlen($token_definition["str"])) {
+              $match_complete = true;
+              break;
+            }
           }
       } else { // regex
-        if (preg_match($token_entry["regex"], $token) != FALSE) {
-          echo "match " . $token_entry["type"] . "<br />";
+        if (preg_match($token_definition["regex"], $token) != FALSE) {
+          echo "match " . $token_definition["type"] . "<br />";
           $still_matching = true;
-          $last_match_type = $token_entry["type"];
+          $last_match_type = $token_definition["type"];
           $last_match_value = $token;
+          $match_complete = true;
           break;
         }
       }
@@ -142,22 +258,74 @@ function parse_lola_file($lola_contents) {
       echo "reading '" . $next_char . "'<br />";
       $token = $token . $next_char;
     } else {
-      echo "not matching anymore, last match was " . $last_match_type . "<br />";
+      echo "not matching anymore. ";
+      if (!$last_match_complete) {
+        echo "Last match was incomplete.<br />";
+        die("SYNTAX ERROR");
+      }
+      echo "Last match was " . $last_match_type . "<br />";
 
       if ($last_match_type != "WHITESPACE")
-        $token_stack[] = ["type" => $last_match_type, "value" => $last_match_value];
+        $token_stream[] = ["type" => $last_match_type, "value" => $last_match_value];
 
-      echo "Stack is now: ";
-      foreach ($token_stack as $token_found) {
+
+
+      echo "Token stream is now: ";
+      foreach ($token_stream as $token_found) {
         echo $token_found["value"] . " ";
       }
       echo "<br /><br />";
 
       $token = $next_char;
     }
+    $last_match_complete = $match_complete;
   }
 
+  if (count($token_stream) == 0)
+    die ("Empty token stream");
+
   // Read tokens and create parse tree
+  $grammar = [
+    ["lhs" => "net", "rhs" => ["PLACE", "place_lists", "MARKING", "marking_list", "SEMICOLON", "transition_list"]],
+    ["lhs" => "net", "rhs" => ["PLACE", "place_lists", "MARKING", "SEMICOLON", "transition_list"]],
+
+    ["lhs" => "place_lists", "rhs" => ["place_lists", "place_list", "SEMICOLON"]],
+    ["lhs" => "place_lists", "rhs" => ["place_list", "SEMICOLON"]],
+
+    ["lhs" => "place_list", "rhs" => ["nodeident"]],
+    ["lhs" => "place_list", "rhs" => ["place_list", "COMMA", "nodeident"]],
+
+    ["lhs" => "nodeident", "rhs" => ["identifier"]],
+    ["lhs" => "nodeident", "rhs" => ["number"]],
+
+    ["lhs" => "marking_list", "rhs" => ["marking"]],
+    ["lhs" => "marking_list", "rhs" => ["marking_list", "COMMA", "marking"]],
+
+    ["lhs" => "marking", "rhs" => ["nodeident"]],
+    ["lhs" => "marking", "rhs" => ["nodeident", "COLON", "number"]],
+
+    ["lhs" => "transition_list", "rhs" => ["TRANSITION", "nodeident", "CONSUME", "marking_list", "SEMICOLON", "PRODUCE", "marking_list", "SEMICOLON"]],
+    ["lhs" => "transition_list", "rhs" => ["TRANSITION", "nodeident", "CONSUME", "SEMICOLON", "PRODUCE", "marking_list", "SEMICOLON"]],
+    ["lhs" => "transition_list", "rhs" => ["TRANSITION", "nodeident", "CONSUME", "marking_list", "SEMICOLON", "PRODUCE", "SEMICOLON"]],
+    ["lhs" => "transition_list", "rhs" => ["TRANSITION", "nodeident", "CONSUME", "SEMICOLON", "PRODUCE", "SEMICOLON"]],
+  ];
+
+  $token_stack = [];
+  while (count($token_stream) > 0) {
+    $changed = false;
+    //
+    // foreach ($grammar as $grammar_rule) {
+    //   for ($i = 0; $i < count($grammar_rule["rhs"]))
+    // }
+
+    if (!$changed) {
+      echo "Cannot reduce anymore. ";
+      $shifted_token = array_shift($token_stream);
+      echo "Shifting '" . $shifted_token . "'<br />";
+      array_push($token_stack, $shifted_token);
+      $changed = true;
+    }
+  }
 }
 
 // Output debug messages to inline output
