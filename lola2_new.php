@@ -117,6 +117,19 @@ $checks = [
 // FUNCTIONS
 //
 
+// Output debug messages to inline output
+function debug($data) {
+  global $debug_switch;
+  if (!$debug_switch)
+    return;
+
+  if (is_array($data)) {
+    echo "<pre>"; print_r($data); echo "</pre>";
+  } else {
+    echo "<br />\n" . htmlspecialchars($data) . "<br />\n";
+  }
+}
+
 // Parse LoLA file into associative array
 function parse_lola_file($lola_contents) {
   // Place list regex: Produces a named capturing group "placelist" that contains the list of places
@@ -280,19 +293,6 @@ function assert_is_workflow_net($petrinet) {
   }
 }
 
-// Output debug messages to inline output
-function debug($data) {
-  global $debug_switch;
-  if (!$debug_switch)
-    return;
-
-  if (is_array($data)) {
-    echo "<pre>"; print_r($data); echo "</pre>";
-  } else {
-    echo "<br />\n" . htmlspecialchars($data) . "<br />\n";
-  }
-}
-
 // Execute LoLA with given formula and parse result
 function exec_lola_check($check_name, $formula, $extra_parameters = "") {
   global $lola_filename;
@@ -339,8 +339,17 @@ function lola_check_global($check_name, $formula) {
 
 // Run a check on a single transition
 function lola_check_single_transition($check_name, $formula, $transition_name) {
+  global $petrinet;
+
+  // Check if this transition is present
+  if (!array_filter($petrinet["transitions"], function($transition) use ($transition_name) { return $transition["id"] == $transition_name; })) {
+    debug($petrinet);
+    die("This transition does not exist in the petri net");
+  }
+
   $safe_transition_name = preg_replace("/\W/", "", $transition_name);
   $individual_check_name = $check_name . "." . $safe_transition_name;
+  
   $formula = $formula . "(" . $transition_name . ")";
   return exec_lola_check($individual_check_name, $formula);
 }
