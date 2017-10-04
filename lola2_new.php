@@ -13,7 +13,7 @@ error_reporting(-1);
 //ini_set("html_errors", 1);
 
 // Set to 'true' to enable debug messages
-$debug_switch = false;
+$debug_switch = true;
 
 // Location of 'petri' binary
 $petri = "/opt/lola/bin/petri";
@@ -26,6 +26,12 @@ $uuid = date("Ymd-His-".rand(0,10));
 
 // Location of workdir
 $workdir = "/data/lola-workdir/".$uuid;
+
+// Timelimit in seconds per LoLA run
+$lola_timelimit = 3;
+
+// Maximum number of markings that LoLA may explore (correlates to memory usage)
+$lola_markinglimit = 100000;
 
 // Definition of checks
 $checks = [
@@ -45,35 +51,54 @@ $checks = [
     ],
     "quasiliveness" => [
       "isChecked" => false,
-      "type" => "global",
+      "type" => "all_transitions",
       "function" => function() {
-        // net satisfies quasiliveness if no transition is dead (= each transition can fire eventually)
-        return lola_check_all_transitions("quasiliveness", "AGEF FIREABLE");
+        // A net is quasi-live if it does not have any dead transition.
+        return lola_check_all_transitions_negated("quasiliveness", "AG NOT FIREABLE");
+      }
+    ],
+    "liveness" => [
+      "isChecked" => false,
+      "type" => "all_transitions",
+      "function" => function() {
+        // A net is live if all its transitions are live.
+        return lola_check_all_transitions("liveness", "AGEF FIREABLE");
       }
     ],
     "relaxed" => [ // TODO FIXME
       "isChecked" => false,
       "type" => "all_transitions",
       "function" => function() {
-        return lola_check_relaxed_soundness();
+        global $lola_filename;
+        global $petrinet;
+        assert_is_workflow_net($petrinet);
+        // TODO FIXME
+        die("TODO implement relaxed soundness");
       }
-    ],
-    "liveness" => [ // TODO FIXME is this the exact same as quasiliveness?
-      "isChecked" => false,
-      "formula" => "", // TODO FIXME
-      "type" => "all_transitions"
     ],
     "boundedness" => [
       "isChecked" => false,
-      "formula" => "", // TODO FIXME
-      "type" => "all_transitions"
+      "type" => "all_transitions",
+      "function" => function() {
+        global $petrinet;
+        foreach ($petrinet["places"] as $place) {
+          $safe_place_name = preg_replace("/\W/", "", $place);
+          $individual_check_name = "boundedness" . "." . $safe_place_name;
+          $formula = "AG " . $place . " < oo";
+          $extra_parameters = "--encoder=full --search=cover";
+          $ret = exec_lola_check($individual_check_name, $formula, $extra_parameters);
+          if (!$ret)
+            return false;
+        }
+        return true;
+      }
     ],
     "dead_transition" => [
       "isChecked" => false,
       "formula" => "AGEF NOT FIREABLE",
       "type" => "single_transition",
       "function" => function($transition) {
-        return lola_check_single_transition("dead_transition", "AGEF NOT FIREABLE", $transition);
+        return lola_check_single_transition("dead_transition", "AG NOT FIREABLE", $transition);
       }
     ],
     "live_transition" => [
@@ -212,7 +237,7 @@ function parse_lola_file($lola_contents) {
   $transition_source_places = [];
   foreach ($transitions as $transition) {
     foreach ($transition["consume"] as $source) {
-      $transition_source_places[] = $target["place"];
+      $transition_source_places[] = $source["place"];
     }
   }
   $sink_places = array_diff($sink_place_candidates, $transition_source_places);
@@ -226,6 +251,33 @@ function parse_lola_file($lola_contents) {
   ];
 
   return $petrinet;
+}
+
+function assert_is_workflow_net($petrinet) {
+  if (count($petrinet["source_places"]) == 0) {
+    debug($petrinet);
+    die("The petri net has no source places and therefore is no workflow net");
+  }
+  if (count($petrinet["source_places"]) > 1) {
+    debug($petrinet);
+    die("The petri net has more than one source place and therefore is no workflow net");
+  }
+  if (count($petrinet["sink_places"]) == 0) {
+    debug($petrinet);
+    die("The petri net has no sink places and therefore is no workflow net");
+  }
+  if (count($petrinet["sink_places"]) > 1) {
+    debug($petrinet);
+    die("The petri net has more than one sink place and therefore is no workflow net");
+  }
+  if (count($petrinet["markings"]) == 0) {
+    debug($petrinet);
+    die("The petri net has zero initial markings and therefore is no workflow net");
+  }
+  if (count($petrinet["markings"]) > 1) {
+    debug($petrinet);
+    die("The petri net has more than one initial marking and therefore is no workflow net");
+  }
 }
 
 // Output debug messages to inline output
@@ -244,13 +296,15 @@ function debug($data) {
 // Execute LoLA with given formula and parse result
 function exec_lola_check($check_name, $formula, $extra_parameters = "") {
   global $lola_filename;
+  global $lola_timelimit;
+  global $lola_markinglimit;
   global $lola;
   $json_filename = $lola_filename . "." . $check_name . ".json";
   $process_output = [];
   $return_code = 0;
 
   // Run LoLA
-  $lola_command = $lola . " " . $extra_parameters . " --formula='" . $formula . "' --json='" . $json_filename . "' '" . $lola_filename . "' 2>&1";
+  $lola_command = $lola . " --timelimit=" . $lola_timelimit . " --markinglimit=" . $lola_markinglimit . " " . $extra_parameters . " --formula='" . $formula . "' --json='" . $json_filename . "' '" . $lola_filename . "' 2>&1";
   debug("Running command " . $lola_command);
   exec($lola_command, $process_output, $return_code);
 
@@ -296,38 +350,23 @@ function lola_check_all_transitions($check_name, $formula) {
   global $petrinet;
   foreach ($petrinet["transitions"] as $transition) {
     $ret = lola_check_single_transition($check_name, $formula, $transition["id"]);
-    if (!$ret)
+    if (!$ret) {
+      debug("Single transition check " . $check_name . " for transition " . $transition["id"] . " failed, returning false");
       return false;
+    }
   }
   return true;
 }
 
-function lola_check_relaxed_soundness() {
-  global $lola_filename;
+// Run a check on every transition individually - negated
+function lola_check_all_transitions_negated($check_name, $formula) {
   global $petrinet;
-  if (count($petrinet["source_places"]) != 1) {
-    die("The petri net has zero or more than one source places and therefore is no workflow net");
-  }
-  if (count($petrinet["sink_places"]) != 1) {
-    die("The petri net has zero or more than one sink places and therefore is no workflow net");
-  }
-  if (count($petrinet["markings"]) != 1) {
-    die("The petri net has zero or more than one initial markings and therefore is no workflow net");
-  }
-  // TODO FIXME
-  die("TODO implement relaxed soundness");
-}
-
-function lola_check_boundedness() {
-  global $petrinet;
-  foreach ($petrinet["places"] as $place) {
-    $safe_place_name = preg_replace("/\W/", "", $place);
-    $individual_check_name = "boundedness" . "." . $safe_place_name;
-    $formula = "AG " . $place . " < oo";
-    $extra_parameters = "--encoder=full --search=cover";
-    $ret = exec_lola_check($individual_check_name, $formula, $extra_parameters);
-    if (!ret)
+  foreach ($petrinet["transitions"] as $transition) {
+    $ret = lola_check_single_transition($check_name, $formula, $transition["id"]);
+    if ($ret) {
+      debug("Single negated transition check " . $check_name . " for transition " . $transition["id"] . " succeeded, returning false");
       return false;
+    }
   }
   return true;
 }
