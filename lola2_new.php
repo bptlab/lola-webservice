@@ -4,6 +4,7 @@
 // CONFIGURATION
 //
 
+// TODO witness path
 
 // Please report all problems, thanks
 error_reporting(-1);
@@ -65,15 +66,34 @@ $checks = [
         return lola_check_all_transitions("liveness", "AGEF FIREABLE");
       }
     ],
-    "relaxed" => [ // TODO FIXME
+    "relaxed_soundness" => [
       "isChecked" => false,
       "type" => "all_transitions",
       "function" => function() {
+        // A net is relaxed sound if each transition can participate in at least one sound execution
+        // - meaning that there is a path that contains the transition that ends successfully
+        // (only marking left in the net is on the sink place)
         global $lola_filename;
         global $petrinet;
         assert_is_workflow_net($petrinet);
-        // TODO FIXME
-        die("TODO implement relaxed soundness");
+
+        $all_but_sink_places = array_diff($petrinet["places"], $petrinet["sink_places"]);
+        $only_sink_active_formula = "";
+        foreach ($all_but_sink_places as $place) {
+          $only_sink_active_formula .= $place . " = 0 AND ";
+        }
+        $only_sink_active_formula .= $petrinet["sink_places"][0] . " = 1";
+
+        foreach ($petrinet["transitions"] as $transition) {
+          $safe_name = safe_name($transition["id"]);
+          $individual_check_name = "relaxed_soundness" . "." . $safe_name;
+
+          $formula = "EF ( FIREABLE(" . $transition["id"] . ") AND EF (" . $only_sink_active_formula . "))";
+          $ret = exec_lola_check($individual_check_name, $formula);
+          if (!$ret)
+            return false;
+        }
+        return true;
       }
     ],
     "boundedness" => [
@@ -82,7 +102,7 @@ $checks = [
       "function" => function() {
         global $petrinet;
         foreach ($petrinet["places"] as $place) {
-          $safe_place_name = preg_replace("/\W/", "", $place);
+          $safe_place_name = safe_name($place);
           $individual_check_name = "boundedness" . "." . $safe_place_name;
           $formula = "AG " . $place . " < oo";
           $extra_parameters = "--encoder=full --search=cover";
@@ -240,20 +260,20 @@ function parse_lola_file($lola_contents) {
   $transition_target_places = [];
   foreach ($transitions as $transition) {
     foreach ($transition["produce"] as $target) {
-      $transition_target_places[] = $target["place"];
+      array_push($transition_target_places, $target["place"]);
     }
   }
-  $source_places = array_diff($source_place_candidates, $transition_target_places);
+  $source_places = array_values(array_diff($source_place_candidates, $transition_target_places));
 
   // Determine sink place(s) (no outgoing edges)
   $sink_place_candidates = $places;
   $transition_source_places = [];
   foreach ($transitions as $transition) {
     foreach ($transition["consume"] as $source) {
-      $transition_source_places[] = $source["place"];
+      array_push($transition_source_places, $source["place"]);
     }
   }
-  $sink_places = array_diff($sink_place_candidates, $transition_source_places);
+  $sink_places = array_values(array_diff($sink_place_candidates, $transition_source_places));
 
   $petrinet = [
     "places" => $places,
@@ -268,29 +288,29 @@ function parse_lola_file($lola_contents) {
 
 function assert_is_workflow_net($petrinet) {
   if (count($petrinet["source_places"]) == 0) {
-    debug($petrinet);
     die("The petri net has no source places and therefore is no workflow net");
   }
   if (count($petrinet["source_places"]) > 1) {
-    debug($petrinet);
     die("The petri net has more than one source place and therefore is no workflow net");
   }
   if (count($petrinet["sink_places"]) == 0) {
-    debug($petrinet);
     die("The petri net has no sink places and therefore is no workflow net");
   }
   if (count($petrinet["sink_places"]) > 1) {
-    debug($petrinet);
     die("The petri net has more than one sink place and therefore is no workflow net");
   }
   if (count($petrinet["markings"]) == 0) {
-    debug($petrinet);
     die("The petri net has zero initial markings and therefore is no workflow net");
   }
   if (count($petrinet["markings"]) > 1) {
-    debug($petrinet);
     die("The petri net has more than one initial marking and therefore is no workflow net");
   }
+}
+
+// Mangle a place / transition name so that the result is a string that is safe to write to disk etc.
+// by replacing all but "word" characters
+function safe_name($name) {
+  return preg_replace("/\W/", "_", $name);
 }
 
 // Execute LoLA with given formula and parse result
@@ -300,11 +320,12 @@ function exec_lola_check($check_name, $formula, $extra_parameters = "") {
   global $lola_markinglimit;
   global $lola;
   $json_filename = $lola_filename . "." . $check_name . ".json";
+  $path_filename = $lola_filename . "." . $check_name . ".path";
   $process_output = [];
   $return_code = 0;
 
   // Run LoLA
-  $lola_command = $lola . " --timelimit=" . $lola_timelimit . " --markinglimit=" . $lola_markinglimit . " " . $extra_parameters . " --formula='" . $formula . "' --json='" . $json_filename . "' '" . $lola_filename . "' 2>&1";
+  $lola_command = $lola . " --timelimit=" . $lola_timelimit . " --markinglimit=" . $lola_markinglimit . " " . $extra_parameters . " --formula='" . $formula . "' --path='" . $path_filename . "' --json='" . $json_filename . "' '" . $lola_filename . "' 2>&1";
   debug("Running command " . $lola_command);
   exec($lola_command, $process_output, $return_code);
 
@@ -343,13 +364,12 @@ function lola_check_single_transition($check_name, $formula, $transition_name) {
 
   // Check if this transition is present
   if (!array_filter($petrinet["transitions"], function($transition) use ($transition_name) { return $transition["id"] == $transition_name; })) {
-    debug($petrinet);
     die("This transition does not exist in the petri net");
   }
 
   $safe_transition_name = preg_replace("/\W/", "", $transition_name);
   $individual_check_name = $check_name . "." . $safe_transition_name;
-  
+
   $formula = $formula . "(" . $transition_name . ")";
   return exec_lola_check($individual_check_name, $formula);
 }
@@ -394,7 +414,7 @@ if (empty($_REQUEST['input'])) {
 }
 
 mkdir($workdir);
-echo $workdir . "<br />";
+debug($workdir);
 
 $pnml_input = stripslashes($_REQUEST['input']);
 $pnml_filename = $workdir."/".$uuid.".pnml";
@@ -404,7 +424,7 @@ $live_transition_name = htmlspecialchars($_REQUEST['live_transition_name']);
 
 $custom_formula_content = "";
 if (isset($_REQUEST['custom_formula']))
-  $custom_formula_content = htmlspecialchars($_REQUEST['custom_formula_content']);
+  $custom_formula_content = $_REQUEST['custom_formula_content'];
 
 // Which checks are requested?
 $num_checks = 0;
@@ -449,6 +469,7 @@ if ($lola_content === FALSE)
   die("Can't open converted file");
 
 $petrinet = parse_lola_file($lola_content);
+debug($petrinet);
 
 // Execute each check
 foreach($checks as $check_name => $check_properties) {
@@ -484,9 +505,9 @@ foreach($checks as $check_name => $check_properties) {
     }
 }
 
-// Run custom check
+// Run custom check -- TODO FIXME
 if ($custom_formula_content) {
-  $result = exec_lola_check($lola_filename, "custom", $custom_formula_content);
+  $result = exec_lola_check("custom", $custom_formula_content);
   echo "custom_check" . " = " . ($result ? 'true' : 'false') . ";<br />\n";
 }
 
