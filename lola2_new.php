@@ -14,7 +14,7 @@ error_reporting(-1);
 //ini_set("html_errors", 1);
 
 // Set to 'true' to enable debug messages
-$debug_switch = true;
+$debug_switch = false;
 
 // Location of 'petri' binary
 $petri = "/opt/lola/bin/petri";
@@ -33,6 +33,18 @@ $lola_timelimit = 3;
 
 // Maximum number of markings that LoLA may explore (correlates to memory usage)
 $lola_markinglimit = 100000;
+
+// Class to hold results in
+class CheckResult
+{
+    function __construct($result, $witness_path)
+    {
+        $this->result = $result;
+        $this->witness_path = $witness_path;
+    }
+    public $result = NULL;
+    public $witness_path = "";
+}
 
 // Definition of checks
 $checks = [
@@ -90,10 +102,10 @@ $checks = [
 
           $formula = "EF ( FIREABLE(" . $transition["id"] . ") AND EF (" . $only_sink_active_formula . "))";
           $ret = exec_lola_check($individual_check_name, $formula);
-          if (!$ret)
-            return false;
+          if (!$ret->result)
+            return $ret;
         }
-        return true;
+        return new CheckResult(true, "");
       }
     ],
     "boundedness" => [
@@ -107,10 +119,10 @@ $checks = [
           $formula = "AG " . $place . " < oo";
           $extra_parameters = "--encoder=full --search=cover";
           $ret = exec_lola_check($individual_check_name, $formula, $extra_parameters);
-          if (!$ret)
-            return false;
+          if (!$ret->result)
+            return $ret;
         }
-        return true;
+        return new CheckResult(true, "");
       }
     ],
     "dead_transition" => [
@@ -143,7 +155,7 @@ function debug($data) {
   if (!$debug_switch)
     return;
 
-  if (is_array($data)) {
+  if (is_array($data) || is_object($data)) {
     echo "<pre>"; print_r($data); echo "</pre>";
   } else {
     echo "<br />\n" . htmlspecialchars($data) . "<br />\n";
@@ -286,6 +298,9 @@ function parse_lola_file($lola_contents) {
   return $petrinet;
 }
 
+// Assert that the given petrinet is a workflow net.
+// A workflow net has exactly one source place (no incoming edges),
+// exactly one sink place (no outgoing edges) and exactly one initial marking.
 function assert_is_workflow_net($petrinet) {
   if (count($petrinet["source_places"]) == 0) {
     die("The petri net has no source places and therefore is no workflow net");
@@ -349,8 +364,16 @@ function exec_lola_check($check_name, $formula, $extra_parameters = "") {
     die($check_name . ": malformed JSON result in " . $json_filename);
   }
 
-  // Return analysis result as bool
-  return (boolean)($json_result["analysis"]["result"]);
+  // Load witness path
+  $witness_path = "";
+  if (file_exists($path_filename))
+    $witness_path = file_get_contents($path_filename);
+
+  // Create result object
+  $result = new CheckResult((boolean)($json_result["analysis"]["result"]), $witness_path);
+
+  // Return analysis result
+  return $result;
 }
 
 // Run a check on the whole net
@@ -379,12 +402,13 @@ function lola_check_all_transitions($check_name, $formula) {
   global $petrinet;
   foreach ($petrinet["transitions"] as $transition) {
     $ret = lola_check_single_transition($check_name, $formula, $transition["id"]);
-    if (!$ret) {
+    if (!$ret->result) {
       debug("Single transition check " . $check_name . " for transition " . $transition["id"] . " failed, returning false");
-      return false;
+      // Re-using last returned result object - containing witness path
+      return $ret;
     }
   }
-  return true;
+  return new CheckResult(true, "");
 }
 
 // Run a check on every transition individually - negated
@@ -392,12 +416,12 @@ function lola_check_all_transitions_negated($check_name, $formula) {
   global $petrinet;
   foreach ($petrinet["transitions"] as $transition) {
     $ret = lola_check_single_transition($check_name, $formula, $transition["id"]);
-    if ($ret) {
+    if ($ret->result) {
       debug("Single negated transition check " . $check_name . " for transition " . $transition["id"] . " succeeded, returning false");
-      return false;
+      return new CheckResult(false, $ret->witness_path);
     }
   }
-  return true;
+  return new CheckResult(true, "");
 }
 
 //
@@ -453,7 +477,7 @@ $process_output = [];
 
 exec($petri . " -ipnml -olola ".$pnml_filename, $process_output, $return_code);
 if ($return_code != 0) {
-  echo "petri returned " . $return_code . "<br />";
+  echo "petri exited with status " . $return_code . " -- probably the input is malformed.<br />";
   foreach ($process_output as $line) {
     echo htmlspecialchars($line) . "<br />";
   }
@@ -501,14 +525,19 @@ foreach($checks as $check_name => $check_properties) {
           break;
       }
       // Output check result
-      echo $check_name . " = " . ($result ? 'true' : 'false') . ";<br />\n";
+      debug($result);
+      echo $check_name . " = " . ($result->result ? 'true' : 'false') . ";<br />\n";
+      if ($result->witness_path)
+        echo $check_name . "_witness_path = '" . $result->witness_path . "';<br />\n";
     }
 }
 
-// Run custom check -- TODO FIXME
+// Run custom check
 if ($custom_formula_content) {
   $result = exec_lola_check("custom", $custom_formula_content);
-  echo "custom_check" . " = " . ($result ? 'true' : 'false') . ";<br />\n";
+  echo "custom_check" . " = " . ($result->result ? 'true' : 'false') . ";<br />\n";
+  if ($result->witness_path)
+    echo "custom_check_witness_path = '" . $result->witness_path . "';<br />\n";
 }
 
 ?>
