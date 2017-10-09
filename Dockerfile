@@ -7,9 +7,11 @@ RUN apt-get update \
     && apt-get clean
 
 # Copy "webapp" files
-COPY index.html /app/
-COPY lola.php /app/
-COPY lola2_new.php /app/
+COPY index.html         /app/
+COPY lola2.html         /app/
+COPY lola.php           /app/
+COPY lola2_new.php      /app/
+COPY bootstrap.min.css  /app/
 
 # Prepare dirs
 RUN mkdir /opt/lola && \
@@ -70,4 +72,3 @@ RUN cd /opt/lola/pnapi/build \
     && make install \
     && cp utils/.libs/sound /opt/lola/bin/ \
     && find src -iname "*.so*" -exec cp {} /usr/lib/ \;
-
