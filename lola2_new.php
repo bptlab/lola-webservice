@@ -191,6 +191,13 @@ function debug($data) {
   }
 }
 
+function terminate($msg) {
+  global $uuid;
+  echo $msg . "<br />\n";
+  echo "UUID: " . $uuid . "<br />\n";
+  die();
+}
+
 // Parse LoLA file into associative array
 function parse_lola_file($lola_contents) {
   // Place list regex: Produces a named capturing group "placelist" that contains the list of places
@@ -332,22 +339,22 @@ function parse_lola_file($lola_contents) {
 // exactly one sink place (no outgoing edges) and exactly one initial marking.
 function assert_is_workflow_net($petrinet) {
   if (count($petrinet["source_places"]) == 0) {
-    die("The petri net has no source places and therefore is no workflow net");
+    terminate("The petri net has no source places and therefore is no workflow net");
   }
   if (count($petrinet["source_places"]) > 1) {
-    die("The petri net has more than one source place and therefore is no workflow net");
+    terminate("The petri net has more than one source place and therefore is no workflow net");
   }
   if (count($petrinet["sink_places"]) == 0) {
-    die("The petri net has no sink places and therefore is no workflow net");
+    terminate("The petri net has no sink places and therefore is no workflow net");
   }
   if (count($petrinet["sink_places"]) > 1) {
-    die("The petri net has more than one sink place and therefore is no workflow net");
+    terminate("The petri net has more than one sink place and therefore is no workflow net");
   }
   if (count($petrinet["markings"]) == 0) {
-    die("The petri net has zero initial markings and therefore is no workflow net");
+    terminate("The petri net has zero initial markings and therefore is no workflow net");
   }
   if (count($petrinet["markings"]) > 1) {
-    die("The petri net has more than one initial marking and therefore is no workflow net");
+    terminate("The petri net has more than one initial marking and therefore is no workflow net");
   }
 }
 
@@ -378,19 +385,19 @@ function exec_lola_check($check_name, $formula, $extra_parameters = "") {
   // Check if run was okay
   if ($return_code != 0) {
     echo "LoLA exited with code ". $return_code . "<br />";
-    die();
+    terminate();
   }
 
   // Load and parse result JSON file
   $string_result = file_get_contents($json_filename);
   if ($string_result === FALSE)
-    die($check_name . ": Can't open result file " . $json_filename);
+    terminate($check_name . ": Can't open result file " . $json_filename);
 
   $json_result = json_decode($string_result, TRUE);
 
   if (!isset($json_result["analysis"]) || !isset($json_result["analysis"]["result"])) {
     debug($json_result);
-    die($check_name . ": malformed JSON result in " . $json_filename);
+    terminate($check_name . ": malformed JSON result");
   }
 
   // Load witness path
@@ -416,7 +423,7 @@ function lola_check_single_transition($check_name, $formula, $transition_name) {
 
   // Check if this transition is present
   if (!array_filter($petrinet["transitions"], function($transition) use ($transition_name) { return $transition["id"] == $transition_name; })) {
-    die("This transition does not exist in the petri net");
+    terminate("This transition does not exist in the petri net");
   }
 
   $safe_transition_name = preg_replace("/\W/", "", $transition_name);
@@ -459,11 +466,11 @@ function lola_check_all_transitions_negated($check_name, $formula) {
 
 // Read input
 if (empty($_REQUEST)) {
-    die("Empty request.");
+    terminate("Empty request.");
 }
 
 if (empty($_REQUEST['input'])) {
-    die("Empty input");
+    terminate("Empty input");
 }
 
 mkdir($workdir);
@@ -491,12 +498,12 @@ foreach($_REQUEST as $key => $value) {
 }
 
 if ($num_checks == 0 && !$custom_formula_content)
-  die("No checks selected.");
+  terminate("No checks selected.");
 
 // Write input net to temp file
 $handle = fopen($pnml_filename, "w+");
 if ($handle === FALSE)
-  die("Can't open temp file");
+  terminate("Can't open temp file");
 fwrite($handle, $pnml_input);
 fclose($handle);
 
@@ -510,7 +517,7 @@ if ($return_code != 0) {
   foreach ($process_output as $line) {
     echo htmlspecialchars($line) . "<br />";
   }
-  die();
+  terminate();
 }
 $jsonResult = [];
 $arrayResult = [];
@@ -519,7 +526,7 @@ $arrayResult = [];
 $lola_filename = $workdir."/".$uuid.".pnml.lola";
 $lola_content = file_get_contents($lola_filename);
 if ($lola_content === FALSE)
-  die("Can't open converted file");
+  terminate("Can't open converted file");
 
 $petrinet = parse_lola_file($lola_content);
 debug($petrinet);
@@ -544,13 +551,13 @@ foreach($checks as $check_name => $check_properties) {
               $transition_name = $live_transition_name;
               break;
             default:
-              die("Unknown single-transition check");
+              terminate("Unknown single-transition check");
               break;
           }
           $result = $check_properties['function']($transition_name);
           break;
         default:
-          die("Unknown check");
+          terminate("Unknown check");
           break;
       }
       // Output check result
