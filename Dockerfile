@@ -8,9 +8,7 @@ RUN apt-get update \
 
 # Copy "webapp" files
 COPY index.html         /app/
-COPY lola2.html         /app/
 COPY lola.php           /app/
-COPY lola2_new.php      /app/
 COPY bootstrap.min.css  /app/
 
 # Prepare dirs
@@ -24,7 +22,6 @@ RUN mkdir /opt/lola && \
 COPY lola-1.18.tar.gz /opt/lola/
 COPY lola-2.0.tar.gz /opt/lola/
 COPY pnapi.tar.gz /opt/lola/
-COPY bin/* /opt/lola/bin/
 COPY formula.cc.patch /opt/lola/
 
 # Unpack LoLA 1
