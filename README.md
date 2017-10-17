@@ -1,8 +1,26 @@
-# Low-level petri net analyzer webservice
+# LoLA 2 as a service
 
-This is a Docker context to build an image for a container that exposes LolA as a webservice.
-Mostly this is re-structuring, patching and hacking to get a version to work again that was running "as-is" on one of our servers. I don't have too much insight into the inner workings of LolA and the wrapper scripts.
+This is a Docker context to build an image for a container that exposes LoLA 2.0 as a webservice.
 
-The base image runs php on nginx. A php script reads user input (a *.pnml* file), converts it to *.owfn* format, runs different analyses on it, gathers the results and outputs one result page.
+## How to use
+* Build a Docker image: `docker build -t bpt/lola .`
+* Run as Docker container and bind to local port 8080: `docker run --rm -it --name lola -p 8080:80 bpt/lola`
+* Navigate to `localhost:8080`, select a PNML file, select checks and run
 
-This still uses LolA version `1.18`, because `2.x` is completely differently structured and I couldn't get it to run.
+## The `lola.php` wrapper script
+The service wrapper (`lola.php`) will do the following:
+
+* read user input as *PNML*
+* convert to *lola* format using `petri`
+* parse the *.lola* file (soundness checks with LoLA 2.0 require prior knowledge of source and sink place(s))
+* run selected checks
+* display the check results together with a witness path, if there is any
+
+## The provided `Dockerfile`
+When building, it will
+
+* base on a php/nginx image
+* install required dependencies
+* patch and build LoLA 1.18 (needed for petri tool)
+* build LoLA 2.0
+* build petri
