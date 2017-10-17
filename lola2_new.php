@@ -4,7 +4,7 @@
 // CONFIGURATION
 //
 
-// TODO witness path
+// TODO Soundness
 
 // Please report all problems, thanks
 error_reporting(-1);
@@ -76,6 +76,35 @@ $checks = [
       "function" => function() {
         // A net is live if all its transitions are live.
         return lola_check_all_transitions("liveness", "AGEF FIREABLE");
+      }
+    ],
+    "soundness" => [
+      "isChecked" => false,
+      "type" => "all_transitions",
+      "function" => function() {
+        // A net is sound if the final marking is reachable from all reachable
+        // markings and there is no dead transition.
+        global $lola_filename;
+        global $petrinet;
+        global $checks;
+        assert_is_workflow_net($petrinet);
+
+        $all_but_sink_places = array_diff($petrinet["places"], $petrinet["sink_places"]);
+        $only_sink_active_formula = "";
+        foreach ($all_but_sink_places as $place) {
+          $only_sink_active_formula .= $place . " = 0 AND ";
+        }
+        $only_sink_active_formula .= $petrinet["sink_places"][0] . " = 1";
+
+        $formula = "AGEF (" . $only_sink_active_formula . ")";
+
+        // Check liveness of reachability of final marking
+        $ret = exec_lola_check("soundness", $formula);
+        if (!$ret->result)
+          return $ret;
+
+        // Check that there is no dead transition (quasi-liveness)
+        return $checks["quasiliveness"]["function"]();
       }
     ],
     "relaxed_soundness" => [
