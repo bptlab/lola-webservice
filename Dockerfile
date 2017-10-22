@@ -52,7 +52,7 @@ RUN cd /opt/lola/ \
     && mkdir build \
     && cd build \
     && ../configure \
-    && make \
+    && make -j4 \
     && make install
 
 # Build pnapi
@@ -62,7 +62,7 @@ RUN cd /opt/lola/ \
     && mkdir build \
     && cd build \
     && ../configure --prefix=/opt/lola \
-    && make
+    && make -j4
 
 # Install pnapi
 RUN cd /opt/lola/pnapi/build \
