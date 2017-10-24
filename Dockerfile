@@ -40,7 +40,7 @@ RUN cd /opt/lola \
 # Build LoLA 1
 RUN cd /opt/lola/lola-1.18/build \
     && CXXFLAGS=-fpermissive ../configure --prefix=/opt/lola \
-    && make -j4 all-configs \
+    && make -j$(nproc) all-configs \
     && make install
 
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/lola/bin
@@ -52,7 +52,7 @@ RUN cd /opt/lola/ \
     && mkdir build \
     && cd build \
     && ../configure \
-    && make -j4 \
+    && make -j$(nproc) \
     && make install
 
 # Build pnapi
@@ -62,7 +62,7 @@ RUN cd /opt/lola/ \
     && mkdir build \
     && cd build \
     && ../configure --prefix=/opt/lola \
-    && make -j4
+    && make -j$(nproc)
 
 # Install pnapi
 RUN cd /opt/lola/pnapi/build \
