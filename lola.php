@@ -4,8 +4,6 @@
 // CONFIGURATION
 //
 
-// TODO Soundness
-
 // Please report all problems, thanks
 error_reporting(-1);
 
