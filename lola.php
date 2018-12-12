@@ -193,6 +193,7 @@ function terminate($msg) {
   global $uuid;
   echo $msg . "<br />\n";
   echo "UUID: " . $uuid . "<br />\n";
+  echo "If you think this is an error, please attach your input file as well as the above UUID to your report.<br />\n";
   die();
 }
 
@@ -458,6 +459,33 @@ function lola_check_all_transitions_negated($check_name, $formula) {
   return new CheckResult(true, "");
 }
 
+// Write input (PNML or LOLA or whatever) to file
+function write_input_to_file($input, $filepath) {
+  $handle = fopen($filepath, "w+");
+  if ($handle === FALSE)
+    terminate("Can't open temp file");
+  fwrite($handle, $input);
+  fclose($handle);
+}
+
+// Convert .pnml file to .lola file and return path
+function convert_pnml_to_lola($pnml_filename) {
+  $return_code = null;
+  $process_output = [];
+
+  exec($petri . " -ipnml -olola ".$pnml_filename, $process_output, $return_code);
+  if ($return_code != 0) {
+    echo "petri exited with status " . $return_code . " -- probably the input is malformed.<br />";
+    foreach ($process_output as $line) {
+      echo htmlspecialchars($line) . "<br />";
+    }
+    terminate();
+  }
+
+  $lola_filename = $pnml_filename . ".lola";
+  return $lola_filename;
+}
+
 //
 // APPLICATION LOGIC
 //
@@ -474,8 +502,7 @@ if (empty($_REQUEST['input'])) {
 mkdir($workdir);
 debug($workdir);
 
-$pnml_input = stripslashes($_REQUEST['input']);
-$pnml_filename = $workdir."/".$uuid.".pnml";
+$input_content = stripslashes($_REQUEST['input']);
 
 $dead_transition_name = htmlspecialchars($_REQUEST['dead_transition_name']);
 $live_transition_name = htmlspecialchars($_REQUEST['live_transition_name']);
@@ -498,34 +525,40 @@ foreach($_REQUEST as $key => $value) {
 if ($num_checks == 0 && !$custom_formula_content)
   terminate("No checks selected.");
 
-// Write input net to temp file
-$handle = fopen($pnml_filename, "w+");
-if ($handle === FALSE)
-  terminate("Can't open temp file");
-fwrite($handle, $pnml_input);
-fclose($handle);
+// Check if PNML or already LOLA
+$pnml_prefix = "<?xml ";
+$lola_prefix = "PLACE";
+$lola_filename = $workdir."/".$uuid.".lola";
+$lola_content = "";
 
-// Convert PNML to LOLA
-$return_code = null;
-$process_output = [];
+if (substr($input_content, 0, strlen($pnml_prefix)) === $pnml_prefix) {
+	// PNML
+	// Write input net to temp file
+	$pnml_filename = $workdir."/".$uuid.".pnml";
+	write_input_to_file($input_content, $pnml_filename);
 
-exec($petri . " -ipnml -olola ".$pnml_filename, $process_output, $return_code);
-if ($return_code != 0) {
-  echo "petri exited with status " . $return_code . " -- probably the input is malformed.<br />";
-  foreach ($process_output as $line) {
-    echo htmlspecialchars($line) . "<br />";
-  }
-  terminate();
+	// Convert PNML to LOLA
+	$lola_filename = convert_pnml_to_lola($pnml_filename);
+	
+	// Read LOLA file
+	$lola_content = file_get_contents($lola_filename);
+	if ($lola_content === FALSE)
+		terminate("Can't open converted file");
+		
+} elseif (substr($input_content, 0, strlen($lola_prefix)) === $lola_prefix) {
+	// LOLA
+	// Write input net to temp file
+	write_input_to_file($input_content, $lola_filename);
+	$lola_content = $input_content;
+} else {
+	// Unknown
+	terminate("Input is neither in PNML (or missing XML header) nor LOLA format");
 }
+
 $jsonResult = [];
 $arrayResult = [];
 
 // "Parse" LOLA file to get list of transitions
-$lola_filename = $workdir."/".$uuid.".pnml.lola";
-$lola_content = file_get_contents($lola_filename);
-if ($lola_content === FALSE)
-  terminate("Can't open converted file");
-
 $petrinet = parse_lola_file($lola_content);
 debug($petrinet);
 
