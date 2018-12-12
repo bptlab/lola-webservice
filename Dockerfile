@@ -3,13 +3,8 @@ MAINTAINER Adrian Holfter <adrian.holfter@student.hpi.uni-potsdam.de>
 
 RUN apt-get update \
 #    && apt-get upgrade -y \
-    && apt-get install -y build-essential vim texinfo \
+    && apt-get install -y build-essential vim texinfo wget curl \
     && apt-get clean
-
-# Copy "webapp" files
-COPY index.html         /app/
-COPY lola.php           /app/
-COPY bootstrap.min.css  /app/
 
 # Prepare dirs
 RUN mkdir /opt/lola && \
@@ -69,3 +64,9 @@ RUN cd /opt/lola/pnapi/build \
     && make install \
     && cp utils/.libs/sound /opt/lola/bin/ \
     && find src -iname "*.so*" -exec cp {} /usr/lib/ \;
+
+# Copy "webapp" files
+COPY index.html         /app/
+COPY lola.php           /app/
+COPY bootstrap.min.css  /app/
+
