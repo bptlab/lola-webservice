@@ -15,18 +15,18 @@
     <div class="container">
       <h1>LoLA 2 as a service</h1>
 
-      <p>
-        <label for="file">Import pnml / lola file</label>
-        <input type="file" id="file" name="files" />
-      </p>
-
-      <form action="lola.php" method="POST">
-          <h2>Analysis</h2>
+      <form action="lola.php" method="POST" enctype="multipart/form-data">
+          <p>
+            <label for="file">Import pnml / lola file</label>
+            <input type="file" id="file" name="file" />
+          </p>
 
           <p>PNML / LOLA Input:</p>
           <p>
               <textarea name="input" id="input" cols="50" rows="10"></textarea><br>
           </p>
+
+          <h2>Analysis</h2>
           <p>Choices:</p>
           <p>
             <input type="checkbox" name="deadlocks" id="deadlocks"> <label for="deadlocks">Deadlocks</label>
@@ -63,7 +63,7 @@
           <p>
             <input type="checkbox" name="custom_formula" id="custom_formula"> <label for="custom_formula">Check custom formula</label>
             <br />
-             <textarea name="custom_formula_content" cols"50" rows="5"></textarea><br>
+             <textarea name="custom_formula_content" cols="50" rows="5"></textarea><br>
           </p>
 
           <p><input type="submit" value=" Submit "><input type="reset" value=" Reset "></p>
@@ -72,6 +72,7 @@
     </div>
 
     <!-- JS -->
+    <!--
     <script>
       function handleFileSelect(evt) {
         var reader = new FileReader();
@@ -84,6 +85,7 @@
 
       document.getElementById('file').addEventListener('change', handleFileSelect, false);
     </script>
+    -->
 </body>
 
 </html>

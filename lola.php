@@ -495,14 +495,23 @@ if (empty($_REQUEST)) {
     terminate("Empty request.");
 }
 
-if (empty($_REQUEST['input'])) {
-    terminate("Empty input");
-}
-
 mkdir($workdir);
 debug($workdir);
 
-$input_content = stripslashes($_REQUEST['input']);
+if (isset($_FILES['file']) && !empty($_FILES['file'])) {
+  // Move uploaded file to workdir
+  $uploaded_file_tmp_name = $_FILES['file']['tmp_name'];
+  $uploaded_file_new_name = $workdir."/".$uuid."uploaded.tmp";
+  move_uploaded_file($uploaded_file_tmp_name, $uploaded_file_new_name);
+  debug($uploaded_file_tmp_name);
+  debug($uploaded_file_new_name);
+  $input_content = file_get_contents($uploaded_file_new_name);
+} elseif (isset($_REQUEST['input']) && !empty($_REQUEST['input'])) {
+  // Read from form text input
+  $input_content = stripslashes($_REQUEST['input']);
+} else {
+  terminate("Empty input");
+}
 
 $dead_transition_name = htmlspecialchars($_REQUEST['dead_transition_name']);
 $live_transition_name = htmlspecialchars($_REQUEST['live_transition_name']);
