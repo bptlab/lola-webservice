@@ -35,13 +35,15 @@ $lola_markinglimit = 100000;
 // Class to hold results in
 class CheckResult
 {
-    function __construct($result, $witness_path)
+    function __construct($result, $witness_path, $witness_state)
     {
         $this->result = $result;
         $this->witness_path = $witness_path;
+        $this->witness_state = $witness_state;
     }
     public $result = NULL;
     public $witness_path = "";
+    public $witness_state = "";
 }
 
 // Definition of checks
@@ -132,7 +134,7 @@ $checks = [
           if (!$ret->result)
             return $ret;
         }
-        return new CheckResult(true, "");
+        return new CheckResult(true, "", "");
       }
     ],
     "boundedness" => [
@@ -149,7 +151,7 @@ $checks = [
           if (!$ret->result)
             return $ret;
         }
-        return new CheckResult(true, "");
+        return new CheckResult(true, "", "");
       }
     ],
     "dead_transition" => [
@@ -370,12 +372,22 @@ function exec_lola_check($check_name, $formula, $extra_parameters = "") {
   global $lola_markinglimit;
   global $lola;
   $json_filename = $lola_filename . "." . $check_name . ".json";
-  $path_filename = $lola_filename . "." . $check_name . ".path";
+  $witness_path_filename = $lola_filename . "." . $check_name . ".path";
+  $witness_state_filename = $lola_filename . "." . $check_name . ".state";
   $process_output = [];
   $return_code = 0;
 
   // Run LoLA
-  $lola_command = $lola . " --timelimit=" . $lola_timelimit . " --markinglimit=" . $lola_markinglimit . " " . $extra_parameters . " --formula='" . $formula . "' --path='" . $path_filename . "' --json='" . $json_filename . "' '" . $lola_filename . "' 2>&1";
+  $lola_command = $lola 
+    . " --timelimit=" . $lola_timelimit 
+    . " --markinglimit=" . $lola_markinglimit 
+    . " " . $extra_parameters 
+    . " --formula='" . $formula . "'"
+    . " --path='" . $witness_path_filename . "'"
+    . " --state='" . $witness_state_filename . "'"
+    . " --json='" . $json_filename . "'"
+    . " '" . $lola_filename . "'"
+    . " 2>&1";
   debug("Running command " . $lola_command);
   exec($lola_command, $process_output, $return_code);
 
@@ -401,11 +413,15 @@ function exec_lola_check($check_name, $formula, $extra_parameters = "") {
 
   // Load witness path
   $witness_path = "";
-  if (file_exists($path_filename))
-    $witness_path = file_get_contents($path_filename);
+  if (file_exists($witness_path_filename))
+    $witness_path = file_get_contents($witness_path_filename);
+
+  $witness_state = "";
+  if (file_exists($witness_state_filename))
+    $witness_state = file_get_contents($witness_state_filename);
 
   // Create result object
-  $result = new CheckResult((boolean)($json_result["analysis"]["result"]), $witness_path);
+  $result = new CheckResult((boolean)($json_result["analysis"]["result"]), $witness_path, $witness_state);
 
   // Return analysis result
   return $result;
@@ -603,8 +619,12 @@ foreach($checks as $check_name => $check_properties) {
       // Output check result
       debug($result);
       echo $check_name . " = " . ($result->result ? 'true' : 'false') . ";<br />\n";
+
       if ($result->witness_path)
         echo $check_name . "_witness_path = '" . $result->witness_path . "';<br />\n";
+      
+        if ($result->witness_state)
+        echo $check_name . "_witness_state = '" . $result->witness_state . "';<br />\n";
     }
 }
 
@@ -612,8 +632,12 @@ foreach($checks as $check_name => $check_properties) {
 if ($custom_formula_content) {
   $result = exec_lola_check("custom", $custom_formula_content);
   echo "custom_check" . " = " . ($result->result ? 'true' : 'false') . ";<br />\n";
+  
   if ($result->witness_path)
     echo "custom_check_witness_path = '" . $result->witness_path . "';<br />\n";
+
+  if ($result->witness_state)
+    echo "custom_check_witness_state = '" . $result->witness_state . "';<br />\n";
 }
 
 ?>
