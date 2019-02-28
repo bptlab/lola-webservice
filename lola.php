@@ -100,8 +100,9 @@ $dead_transition_name = htmlspecialchars($_REQUEST['dead_transition_name']);
 $live_transition_name = htmlspecialchars($_REQUEST['live_transition_name']);
 
 $custom_formula_content = "";
-if (isset($_REQUEST['custom_formula']))
-  $custom_formula_content = $_REQUEST['custom_formula_content'];
+if (isset($_REQUEST['custom_formula'])) {
+  $custom_formula_content = htmlspecialchars($_REQUEST['custom_formula_content']);
+}
 
 // Which checks are requested?
 $num_checks = 0;

@@ -65,6 +65,8 @@ function debug($data) {
     global $lola_timelimit;
     global $lola_markinglimit;
     global $lola;
+    global $output;
+
     $json_filename = $lola_filename . "." . $check_name . ".json";
     $witness_path_filename = $lola_filename . "." . $check_name . ".path";
     $witness_state_filename = $lola_filename . "." . $check_name . ".state";
@@ -89,7 +91,8 @@ function debug($data) {
   
     // Check if run was okay
     if ($return_code != 0) {
-      terminate("LoLA exited with code ". $return_code);
+        $output["lola_output"] = $process_output;
+        terminate("LoLA exited with code ". $return_code);
     }
   
     // Load and parse result JSON file
@@ -225,6 +228,8 @@ function debug($data) {
   
   // Convert .pnml file to .lola file and return path
   function convert_pnml_to_lola($pnml_filename) {
+    global $output;
+    
     $return_code = null;
     $process_output = [];
   
