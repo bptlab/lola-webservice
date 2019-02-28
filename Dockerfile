@@ -67,6 +67,6 @@ RUN cd /opt/lola/pnapi/build \
 
 # Copy "webapp" files
 COPY index.html         /app/
-COPY lola.php           /app/
+COPY *.php              /app/
 COPY bootstrap.min.css  /app/
 
