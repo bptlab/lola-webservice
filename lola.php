@@ -32,6 +32,9 @@ $lola_timelimit = 3;
 // Maximum number of markings that LoLA may explore (correlates to memory usage)
 $lola_markinglimit = 100000;
 
+// Output dictionary, to be returned as JSON
+$output = array();
+
 // Class to hold results in
 class CheckResult
 {
@@ -42,8 +45,8 @@ class CheckResult
         $this->witness_state = $witness_state;
     }
     public $result = NULL;
-    public $witness_path = "";
-    public $witness_state = "";
+    public $witness_path = NULL;
+    public $witness_state = NULL;
 }
 
 // Definition of checks
@@ -181,21 +184,25 @@ $checks = [
 // Output debug messages to inline output
 function debug($data) {
   global $debug_switch;
+  global $output;
+
   if (!$debug_switch)
     return;
 
   if (is_array($data) || is_object($data)) {
-    echo "<pre>"; print_r($data); echo "</pre>";
+    $output["debug"][] = $data;
   } else {
-    echo "<br />\n" . htmlspecialchars($data) . "<br />\n";
+    $output["debug"][] = htmlspecialchars($data);
   }
 }
 
 function terminate($msg) {
   global $uuid;
-  echo $msg . "<br />\n";
-  echo "UUID: " . $uuid . "<br />\n";
-  echo "If you think this is an error, please attach your input file as well as the above UUID to your report.<br />\n";
+  global $output;
+  $output["error"] = $msg;
+  $output["uuid"] = $uuid;
+  $output["notice"] = "If you think this is an error, please attach your input file as well as the above UUID to your report.";
+  echo json_encode($output);
   die();
 }
 
@@ -219,57 +226,57 @@ function parse_lola_file($lola_contents) {
   $matches = [];
   $result = preg_match($place_list_regex, $lola_contents, $matches);
   if ($result === FALSE)
-    die ("Error matching place list regex");
+    terminate ("Error matching place list regex");
   if ($result === 0)
-    die ("Syntax error in LoLA file: Couldn't find any places");
+    terminate ("Syntax error in LoLA file: Couldn't find any places");
   if (!isset($matches["placelist"]))
-    die ("Named capture group for place list is non-existent!");
+    terminate ("Named capture group for place list is non-existent!");
 
   $placelist = str_replace(" ", "", $matches["placelist"]);
   $places = explode(",", $placelist);
   if (count($places) == 0)
-    die ("Could not extract places from LoLA file");
+    terminate ("Could not extract places from LoLA file");
 
   // Extract initial markings
   $matches = [];
   $result = preg_match($marking_list_regex, $lola_contents, $matches);
   if ($result === FALSE)
-    die ("Error matching marking list regex");
+    terminate ("Error matching marking list regex");
   if ($result === 0)
-    die ("Syntax error in LoLA file: Couldn't find any markings");
+    terminate ("Syntax error in LoLA file: Couldn't find any markings");
   if (!isset($matches["markinglist"]))
-    die ("Named capture group for marking list is non-existent!");
+    terminate ("Named capture group for marking list is non-existent!");
 
   $markinglist = str_replace(" ", "", $matches["markinglist"]);
   $markings = explode(",", $markinglist);
   if (count($markings) == 0)
-    die ("Could not extract markings from LoLA file");
+    terminate ("Could not extract markings from LoLA file");
 
   // Extract transitions
   $matches = [];
   $result = preg_match_all($transition_list_regex, $lola_contents, $matches, PREG_SET_ORDER);
   if ($result === FALSE)
-    die ("Error matching transition regex");
+    terminate ("Error matching transition regex");
   if ($result === 0)
-    die ("Syntax error in LoLA file: Couldn't find any transitions");
+    terminate ("Syntax error in LoLA file: Couldn't find any transitions");
 
   $transitions = [];
   foreach($matches as $sub_matches) {
     if (!isset($sub_matches["transition"]))
-      die ("Named capture group for transition is non-existent");
+      terminate ("Named capture group for transition is non-existent");
     if (!isset($sub_matches["consume"]))
-      die ("Named capture group for transition consume list is non-existent");
+      terminate ("Named capture group for transition consume list is non-existent");
     if (!isset($sub_matches["produce"]))
-      die ("Named capture group for transition produce list is non-existent");
+      terminate ("Named capture group for transition produce list is non-existent");
     $transition = htmlspecialchars($sub_matches["transition"]);
     $consume_raw = str_replace(" ", "", $sub_matches["consume"]);
     $consume_list_raw = explode(",", $consume_raw);
     if (count($consume_list_raw) == 0)
-      die ("Could not extract consume list from LoLA file");
+      terminate ("Could not extract consume list from LoLA file");
     $produce_raw = str_replace(" ", "", $sub_matches["produce"]);
     $produce_list_raw = explode(",", $produce_raw);
     if (count($produce_list_raw) == 0)
-      die ("Could not extract produce list from LoLA file");
+      terminate ("Could not extract produce list from LoLA file");
 
     // Extract place name and arc weight for consume list
     $consume = [];
@@ -395,8 +402,7 @@ function exec_lola_check($check_name, $formula, $extra_parameters = "") {
 
   // Check if run was okay
   if ($return_code != 0) {
-    echo "LoLA exited with code ". $return_code . "<br />";
-    terminate();
+    terminate("LoLA exited with code ". $return_code);
   }
 
   // Load and parse result JSON file
@@ -405,6 +411,7 @@ function exec_lola_check($check_name, $formula, $extra_parameters = "") {
     terminate($check_name . ": Can't open result file " . $json_filename);
 
   $json_result = json_decode($string_result, TRUE);
+  debug($json_result);
 
   if (!isset($json_result["analysis"]) || !isset($json_result["analysis"]["result"])) {
     debug($json_result);
@@ -412,19 +419,64 @@ function exec_lola_check($check_name, $formula, $extra_parameters = "") {
   }
 
   // Load witness path
-  $witness_path = "";
-  if (file_exists($witness_path_filename))
-    $witness_path = file_get_contents($witness_path_filename);
+  $witness_path = load_witness_path($witness_path_filename);
 
-  $witness_state = "";
-  if (file_exists($witness_state_filename))
-    $witness_state = file_get_contents($witness_state_filename);
+  // Load witness state
+  $witness_state = load_witness_state($witness_state_filename);
 
   // Create result object
   $result = new CheckResult((boolean)($json_result["analysis"]["result"]), $witness_path, $witness_state);
 
   // Return analysis result
   return $result;
+}
+
+function load_witness_path($witness_path_filename) {
+  $witness_path = array();
+  if (file_exists($witness_path_filename)) {
+    $witness_path_contents = file_get_contents($witness_path_filename);
+    // Split on newlines
+    $witness_path = explode("\n", $witness_path_contents);
+    
+    // Since there is a newline after every line, the last element is empty
+    $last_element = array_pop($witness_path);
+    if($last_element != "") {
+      // whoops
+      array_push($witness_path, $last_element);
+    }
+  }
+  return $witness_path;
+}
+
+function load_witness_state($witness_state_filename) {
+  $witness_state = array();
+  if (file_exists($witness_state_filename)) {
+    $witness_state_contents = file_get_contents($witness_state_filename);
+
+    if($witness_state_contents == "NOSTATE\n") {
+      return array();
+    }
+
+    // Split on newlines
+    $witness_states = explode("\n", $witness_state_contents);
+
+    // Since there is a newline after every line, the last element is empty
+    $last_element = array_pop($witness_states);
+    if($last_element != "") {
+      // whoops
+      array_push($witness_states, $last_element);
+    }
+
+    // Split place and number of tokens
+    foreach($witness_states as $place_and_token) {
+      $exploded = explode(" : ", $place_and_token);
+      if(count($exploded) != 2) {
+        terminate("Cannot split witness state '" . $place_and_token . "' (got " . count($exploded) . ")");
+      }
+      $witness_state[$exploded[0]] = $exploded[1];
+    }
+  }
+  return $witness_state;
 }
 
 // Run a check on the whole net
@@ -459,7 +511,7 @@ function lola_check_all_transitions($check_name, $formula) {
       return $ret;
     }
   }
-  return new CheckResult(true, "");
+  return new CheckResult(true, "", "");
 }
 
 // Run a check on every transition individually - negated
@@ -469,10 +521,10 @@ function lola_check_all_transitions_negated($check_name, $formula) {
     $ret = lola_check_single_transition($check_name, $formula, $transition["id"]);
     if ($ret->result) {
       debug("Single negated transition check " . $check_name . " for transition " . $transition["id"] . " succeeded, returning false");
-      return new CheckResult(false, $ret->witness_path);
+      return new CheckResult(false, $ret->witness_path, $ret->witness_state);
     }
   }
-  return new CheckResult(true, "");
+  return new CheckResult(true, "", "");
 }
 
 // Write input (PNML or LOLA or whatever) to file
@@ -491,11 +543,10 @@ function convert_pnml_to_lola($pnml_filename) {
 
   exec($petri . " -ipnml -olola ".$pnml_filename, $process_output, $return_code);
   if ($return_code != 0) {
-    echo "petri exited with status " . $return_code . " -- probably the input is malformed.<br />";
     foreach ($process_output as $line) {
-      echo htmlspecialchars($line) . "<br />";
+      $output["petri_output"][] = htmlspecialchars($line);
     }
-    terminate();
+    terminate("petri exited with status " . $return_code . " -- probably the input is malformed.");
   }
 
   $lola_filename = $pnml_filename . ".lola";
@@ -506,6 +557,9 @@ function convert_pnml_to_lola($pnml_filename) {
 // APPLICATION LOGIC
 //
 
+// We will write JSON
+header('Content-type:application/json;charset=utf-8');
+
 // Read input
 if (empty($_REQUEST)) {
     terminate("Empty request.");
@@ -514,8 +568,9 @@ if (empty($_REQUEST)) {
 mkdir($workdir);
 debug($workdir);
 
-if (isset($_FILES['file']) && !empty($_FILES['file'])) {
+if (isset($_FILES['file']) && $_FILES['file']['tmp_name']) {
   // Move uploaded file to workdir
+  debug($_FILES);
   $uploaded_file_tmp_name = $_FILES['file']['tmp_name'];
   $uploaded_file_new_name = $workdir."/".$uuid."uploaded.tmp";
   move_uploaded_file($uploaded_file_tmp_name, $uploaded_file_new_name);
@@ -618,26 +673,28 @@ foreach($checks as $check_name => $check_properties) {
       }
       // Output check result
       debug($result);
-      echo $check_name . " = " . ($result->result ? 'true' : 'false') . ";<br />\n";
+      $output["checks"][$check_name]["result"] = $result->result;
 
       if ($result->witness_path)
-        echo $check_name . "_witness_path = '" . $result->witness_path . "';<br />\n";
+        $output["checks"][$check_name]["witness_path"] = $result->witness_path;
       
-        if ($result->witness_state)
-        echo $check_name . "_witness_state = '" . $result->witness_state . "';<br />\n";
+      if ($result->witness_state)
+        $output["checks"][$check_name]["witness_state"] = $result->witness_state;
     }
 }
 
 // Run custom check
 if ($custom_formula_content) {
   $result = exec_lola_check("custom", $custom_formula_content);
-  echo "custom_check" . " = " . ($result->result ? 'true' : 'false') . ";<br />\n";
+  $output["checks"]["custom_check"]["result"] = $result->result;
   
   if ($result->witness_path)
-    echo "custom_check_witness_path = '" . $result->witness_path . "';<br />\n";
+    $output["checks"]["custom_check"]["witness_path"] = $result->witness_path;
 
   if ($result->witness_state)
-    echo "custom_check_witness_state = '" . $result->witness_state . "';<br />\n";
+    $output["checks"]["custom_check"]["witness_state"] = $result->witness_state;
 }
+
+echo json_encode($output);
 
 ?>
