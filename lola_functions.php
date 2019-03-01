@@ -22,6 +22,7 @@ function debug($data) {
   function terminate($msg) {
     global $uuid;
     global $output;
+    header("HTTP/1.0 400 Bad Request");
     $output["error"] = $msg;
     $output["uuid"] = $uuid;
     $output["notice"] = "If you think this is an error, please attach your input file as well as the above UUID to your report.";

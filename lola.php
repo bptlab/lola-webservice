@@ -96,13 +96,11 @@ if (isset($_FILES['file']) && $_FILES['file']['tmp_name']) {
   terminate("Empty input");
 }
 
-$dead_transition_name = htmlspecialchars($_REQUEST['dead_transition_name']);
-$live_transition_name = htmlspecialchars($_REQUEST['live_transition_name']);
+$dead_transition_name = isset($_REQUEST['dead_transition_name']) ? htmlspecialchars($_REQUEST['dead_transition_name']) : "";
+$live_transition_name = isset($_REQUEST['live_transition_name']) ? htmlspecialchars($_REQUEST['live_transition_name']) : "";
 
-$custom_formula_content = "";
-if (isset($_REQUEST['custom_formula'])) {
-  $custom_formula_content = htmlspecialchars($_REQUEST['custom_formula_content']);
-}
+// custom formula content cannot be escaped entirely since a LoLA formula can contain characters like '>' or '<' etc.
+$custom_formula_content = isset($_REQUEST['custom_formula']) ? $_REQUEST['custom_formula_content'] : "";
 
 // Which checks are requested?
 $num_checks = 0;
