@@ -52,7 +52,7 @@ $workdir = "/data/lola-workdir/".$uuid;
 $lola_timelimit = 3;
 
 // Maximum number of markings that LoLA may explore (correlates to memory usage)
-$lola_markinglimit = 100000;
+$lola_markinglimit = 5000000;
 
 // Class to hold results in
 class CheckResult

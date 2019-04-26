@@ -106,7 +106,7 @@ function debug($data) {
   
     if (!isset($json_result["analysis"]) || !isset($json_result["analysis"]["result"])) {
       debug($json_result);
-      terminate($check_name . ": malformed JSON result");
+      terminate($check_name . ": malformed JSON result. Probably the time or memory limit was exceeded.");
     }
   
     // Load witness path
