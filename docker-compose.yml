@@ -1,0 +1,6 @@
+version: '3'
+services:
+    lola-webservice:
+        image: bptlab/lola-webservice
+        ports:
+            - 4000:80
